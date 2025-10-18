@@ -526,7 +526,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WorldGenerator
   chunkSize: 16
-  worldRadius: 2
+  worldRadius: 1
   updateInterval: 0.25
   noiseScale: 0.08
   heightMultiplier: 8

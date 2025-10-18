@@ -16,37 +16,8 @@ public class Chunk : MonoBehaviour
     public WorldGenerator worldRef;
     public Vector3Int chunkCoord;
 
-    // === Vértices del cubo (en sentido antihorario, normales hacia afuera) ===
-    private static readonly Vector3[] voxelVerts = new Vector3[8] {
-        new Vector3(0, 0, 0), // 0
-        new Vector3(1, 0, 0), // 1
-        new Vector3(1, 1, 0), // 2
-        new Vector3(0, 1, 0), // 3
-        new Vector3(0, 0, 1), // 4
-        new Vector3(1, 0, 1), // 5
-        new Vector3(1, 1, 1), // 6
-        new Vector3(0, 1, 1)  // 7
-    };
-
-    // === Caras del cubo (normales hacia afuera) ===
-    // Orden: BACK, FRONT, TOP, BOTTOM, LEFT, RIGHT
-    private static readonly int[,] voxelTris = new int[6, 6] {
-        {0, 3, 1, 1, 3, 2}, // Back  (Z-)
-        {5, 6, 4, 4, 6, 7}, // Front (Z+)
-        {3, 7, 2, 2, 7, 6}, // Top   (Y+)
-        {1, 5, 0, 0, 5, 4}, // Bottom(Y-)
-        {4, 7, 0, 0, 7, 3}, // Left  (X-)
-        {1, 2, 5, 5, 2, 6}  // Right (X+)
-    };
-
-    private static readonly Vector2[] voxelUvs = new Vector2[6] {
-        new Vector2(0, 0),
-        new Vector2(0, 1),
-        new Vector2(1, 0),
-        new Vector2(1, 0),
-        new Vector2(0, 1),
-        new Vector2(1, 1)
-    };
+    // Cache de vecinos
+    private Dictionary<Vector3Int, byte[,,]> neighborCache = new();
 
     void Awake()
     {
@@ -67,33 +38,40 @@ public class Chunk : MonoBehaviour
         else if (AtlasBuilder.Instance != null)
             mr.sharedMaterial = AtlasBuilder.Instance.GetSharedMaterial();
 
+        if (mr.sharedMaterial != null && mr.sharedMaterial.mainTexture != null)
+        {
+            mr.sharedMaterial.mainTexture.filterMode = FilterMode.Point;
+            mr.sharedMaterial.mainTexture.wrapMode = TextureWrapMode.Repeat;
+        }
+
+        CacheNeighbors();
         BuildMesh();
     }
 
-    private bool IsSolidGlobal(int x, int y, int z)
+    private void CacheNeighbors()
     {
-        if (x >= 0 && x < size && y >= 0 && y < size && z >= 0 && z < size)
-            return blocks[x, y, z] != 0;
+        neighborCache.Clear();
+        Vector3Int[] dirs = {
+            new Vector3Int(-1, 0, 0), new Vector3Int(1, 0, 0),
+            new Vector3Int(0, 0, -1), new Vector3Int(0, 0, 1)
+        };
 
-        if (worldRef == null) return false;
-
-        Vector3Int worldBlockPos = new Vector3Int(
-            chunkCoord.x * size + x,
-            y,
-            chunkCoord.z * size + z
-        );
-
-        byte id = worldRef.GetBlockAt(worldBlockPos);
-        return id != 0;
+        foreach (var dir in dirs)
+        {
+            Vector3Int nc = chunkCoord + dir;
+            var neighbor = worldRef.GetChunkBlocks(nc);
+            if (neighbor != null)
+                neighborCache[nc - chunkCoord] = neighbor;
+            else
+                neighborCache[nc - chunkCoord] = new byte[size, size, size]; // evita nullref
+        }
     }
 
     private void BuildMesh()
     {
-        List<Vector3> verts = new List<Vector3>();
-        List<int> tris = new List<int>();
-        List<Vector2> uvs = new List<Vector2>();
-
-        int vertexIndex = 0;
+        List<Vector3> verts = new();
+        List<int> tris = new();
+        List<Vector2> uvs = new();
 
         for (int x = 0; x < size; x++)
         {
@@ -101,55 +79,27 @@ public class Chunk : MonoBehaviour
             {
                 for (int z = 0; z < size; z++)
                 {
-                    byte blockId = blocks[x, y, z];
-                    if (blockId == 0) continue;
-
-                    Vector3 blockPos = new Vector3(x, y, z) * blockSize;
+                    byte block = blocks[x, y, z];
+                    if (block == 0) continue;
 
                     for (int face = 0; face < 6; face++)
                     {
-                        if (CheckNeighborSolid(face, x, y, z)) continue;
+                        Vector3Int neighbor = GetNeighborOffset(face);
+                        byte neighborBlock = GetBlockGlobal(x + neighbor.x, y + neighbor.y, z + neighbor.z);
+                        if (neighborBlock != 0)
+                            continue;
 
-                        // 🔹 Añadir vértices, triángulos y UVs
-                        for (int i = 0; i < 6; i++)
-                        {
-                            int triIndex = voxelTris[face, i];
-                            verts.Add(blockPos + voxelVerts[triIndex] * blockSize);
-                            tris.Add(vertexIndex);
-                            vertexIndex++;
-
-                            // --- TEXTURA SEGÚN LA CARA ---
-                            string blockName = GetBlockName(blockId);
-                            BlockInfo info = BlockDatabase.Instance.GetBlock(blockName);
-
-                            string texId = face switch
-                            {
-                                2 => info.textures.top != null && info.textures.top.Length > 0 ? info.textures.top[0] : info.textures.all, // top
-                                3 => info.textures.bottom ?? info.textures.all, // bottom
-                                _ => info.textures.side ?? info.textures.all   // laterales
-                            };
-
-                            if (string.IsNullOrEmpty(texId))
-                                texId = "dirt";
-
-                            Rect uvRect = AtlasBuilder.Instance.GetUV(texId);
-
-                            Vector2 baseUV = voxelUvs[i];
-                            Vector2 atlasUV = new Vector2(
-                                Mathf.Lerp(uvRect.xMin, uvRect.xMax, baseUV.x),
-                                Mathf.Lerp(uvRect.yMin, uvRect.yMax, baseUV.y)
-                            );
-                            uvs.Add(atlasUV);
-                        }
+                        AddFace(block, x, y, z, face, verts, tris, uvs);
                     }
                 }
             }
         }
 
-        Mesh mesh = new Mesh
+        Mesh mesh = new()
         {
             indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
         };
+
         mesh.SetVertices(verts);
         mesh.SetTriangles(tris, 0);
         mesh.SetUVs(0, uvs);
@@ -160,19 +110,144 @@ public class Chunk : MonoBehaviour
         mc.sharedMesh = mesh;
     }
 
-    private bool CheckNeighborSolid(int face, int x, int y, int z)
+    private void AddFace(byte blockId, int x, int y, int z, int face,
+                         List<Vector3> verts, List<int> tris, List<Vector2> uvs)
+    {
+        int vertIndex = verts.Count;
+        Vector3 basePos = new Vector3(x, y, z);
+        Vector3[] faceVerts = GetFaceVertices(basePos, face);
+        verts.AddRange(faceVerts);
+
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 1);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 3);
+
+        string blockName = GetBlockName(blockId);
+        BlockInfo info = BlockDatabase.Instance.GetBlock(blockName);
+        string texId = info.textures.all;
+
+        if (face == 2 && info.textures.top != null && info.textures.top.Length > 0)
+            texId = info.textures.top[0];
+        else if (face == 3 && info.textures.bottom != null && info.textures.bottom.Length > 0)
+            texId = info.textures.bottom[0];
+        else if (info.textures.side != null && info.textures.side.Length > 0)
+            texId = info.textures.side[0];
+
+        if (string.IsNullOrEmpty(texId)) texId = "dirt";
+
+        Rect uvRect = AtlasBuilder.Instance.GetUV(texId);
+
+        // UVs corregidas y consistentes
+        Vector2[] faceUVs = face switch
+        {
+            0 => new[]
+            {
+                new Vector2(uvRect.xMax, uvRect.yMin),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMin, uvRect.yMax),
+                new Vector2(uvRect.xMin, uvRect.yMin)
+            },
+            1 => new[]
+            {
+                new Vector2(uvRect.xMin, uvRect.yMin),
+                new Vector2(uvRect.xMin, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMin)
+            },
+            2 => new[]
+            {
+                new Vector2(uvRect.xMin, uvRect.yMin),
+                new Vector2(uvRect.xMax, uvRect.yMin),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMin, uvRect.yMax)
+            },
+            3 => new[]
+            {
+                new Vector2(uvRect.xMin, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMin),
+                new Vector2(uvRect.xMin, uvRect.yMin)
+            },
+            4 => new[]
+            {
+                new Vector2(uvRect.xMax, uvRect.yMin),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMin, uvRect.yMax),
+                new Vector2(uvRect.xMin, uvRect.yMin)
+            },
+            5 => new[]
+            {
+                new Vector2(uvRect.xMin, uvRect.yMin),
+                new Vector2(uvRect.xMin, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMax),
+                new Vector2(uvRect.xMax, uvRect.yMin)
+            },
+            _ => null
+        };
+
+        uvs.AddRange(faceUVs);
+    }
+
+    private static Vector3[] GetFaceVertices(Vector3 pos, int face)
     {
         return face switch
         {
-            0 => IsSolidGlobal(x, y, z - 1), // Back
-            1 => IsSolidGlobal(x, y, z + 1), // Front
-            2 => IsSolidGlobal(x, y + 1, z), // Top
-            3 => IsSolidGlobal(x, y - 1, z), // Bottom
-            4 => IsSolidGlobal(x - 1, y, z), // Left
-            5 => IsSolidGlobal(x + 1, y, z), // Right
-            _ => false
+            0 => new[] { pos + new Vector3(0, 0, 1), pos + new Vector3(0, 1, 1), pos + new Vector3(0, 1, 0), pos + new Vector3(0, 0, 0) },
+            1 => new[] { pos + new Vector3(1, 0, 0), pos + new Vector3(1, 1, 0), pos + new Vector3(1, 1, 1), pos + new Vector3(1, 0, 1) },
+            2 => new[] { pos + new Vector3(0, 1, 1), pos + new Vector3(1, 1, 1), pos + new Vector3(1, 1, 0), pos + new Vector3(0, 1, 0) },
+            3 => new[] { pos + new Vector3(0, 0, 0), pos + new Vector3(1, 0, 0), pos + new Vector3(1, 0, 1), pos + new Vector3(0, 0, 1) },
+            4 => new[] { pos + new Vector3(0, 0, 0), pos + new Vector3(0, 1, 0), pos + new Vector3(1, 1, 0), pos + new Vector3(1, 0, 0) },
+            5 => new[] { pos + new Vector3(1, 0, 1), pos + new Vector3(1, 1, 1), pos + new Vector3(0, 1, 1), pos + new Vector3(0, 0, 1) },
+            _ => null
         };
     }
+
+    private static Vector3Int GetNeighborOffset(int face)
+    {
+        return face switch
+        {
+            0 => new Vector3Int(-1, 0, 0),
+            1 => new Vector3Int(1, 0, 0),
+            2 => new Vector3Int(0, 1, 0),
+            3 => new Vector3Int(0, -1, 0),
+            4 => new Vector3Int(0, 0, -1),
+            5 => new Vector3Int(0, 0, 1),
+            _ => Vector3Int.zero
+        };
+    }
+
+    private byte GetBlockGlobal(int x, int y, int z)
+    {
+        // Bloque dentro de los límites locales
+        if (x >= 0 && x < size && y >= 0 && y < size && z >= 0 && z < size)
+            return blocks[x, y, z];
+
+        Vector3Int offset = Vector3Int.zero;
+        int nx = x, ny = y, nz = z;
+
+        // Determinar chunk vecino
+        if (x < 0) { offset.x = -1; nx = size - 1; }
+        else if (x >= size) { offset.x = 1; nx = 0; }
+
+        if (z < 0) { offset.z = -1; nz = size - 1; }
+        else if (z >= size) { offset.z = 1; nz = 0; }
+
+        // Obtener el chunk vecino desde el cache
+        if (!neighborCache.TryGetValue(offset, out var neighbor) || neighbor == null)
+            return 0;
+
+        // 🔒 Verificar límites de seguridad antes de acceder
+        if (ny < 0 || ny >= neighbor.GetLength(1) ||
+            nx < 0 || nx >= neighbor.GetLength(0) ||
+            nz < 0 || nz >= neighbor.GetLength(2))
+            return 0;
+
+        return neighbor[nx, ny, nz];
+    }
+
 
     private string GetBlockName(byte id)
     {

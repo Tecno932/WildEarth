@@ -3,8 +3,8 @@
     "name": "Grass Block",
     "textures": {
       "top": ["grass_top"],
-      "bottom": "dirt",
-      "side": "grass_side"
+      "bottom": ["dirt"],
+      "side": ["grass_side"]
     },
     "solid": true
   },

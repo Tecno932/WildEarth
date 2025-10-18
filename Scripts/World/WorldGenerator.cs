@@ -6,42 +6,54 @@ public class WorldGenerator : MonoBehaviour
 {
     [Header("Chunk Settings")]
     public int chunkSize = 16;
-    public int worldRadius = 2;
-    public float updateInterval = 0.25f; // cada cuánto se actualizan los chunks
+    public int worldRadius = 3;
+    public float updateInterval = 0.25f;
 
     [Header("Noise Settings")]
     public float noiseScale = 0.08f;
     public float heightMultiplier = 8f;
 
-    [Header("Materials")]
-    public Material chunkMaterial;
+    [Header("LOD Settings")]
+    public bool enableLOD = true;
+    public int lod1Distance = 2;
+    public int lod2Distance = 4;
+    public int lod3Distance = 6;
 
     [Header("References")]
     public Transform player;
+    public Material chunkMaterial;
 
-    // IDs de bloques
-    private const byte AIR = 0;
-    private const byte DIRT = 1;
-    private const byte GRASS = 2;
-
-    // Control de chunks activos
-    private readonly Dictionary<Vector2Int, GameObject> activeChunks = new();
-    private readonly Dictionary<Vector2Int, byte[,,]> chunkCache = new();
-
-    private Vector2Int lastPlayerChunk;
+    private Dictionary<Vector2Int, GameObject> activeChunks = new();
+    private ChunkStorage storage;
     private bool generating = false;
+    private Vector2Int lastPlayerChunk;
 
-    void Start()
+    private void Start()
     {
+        storage = FindObjectOfType<ChunkStorage>();
+        if (storage == null)
+        {
+            GameObject obj = new("ChunkStorage");
+            storage = obj.AddComponent<ChunkStorage>();
+        }
+
+        ChunkWorker.StartWorker();
         StartCoroutine(WaitForAtlasThenGenerate());
+    }
+
+    private void OnDestroy()
+    {
+        ChunkWorker.StopWorker();
     }
 
     private IEnumerator WaitForAtlasThenGenerate()
     {
-        yield return new WaitUntil(() => 
-            AtlasBuilder.Instance != null && AtlasBuilder.Instance.GetAtlasTexture() != null);
+        // 🔹 Esperar a que el atlas esté listo sin bloquear el editor
+        yield return new WaitUntil(() =>
+            AtlasBuilder.Instance != null &&
+            AtlasBuilder.Instance.GetAtlasTexture() != null);
 
-        Debug.Log("✅ Atlas listo, generando mundo...");
+        Debug.Log("✅ Atlas listo. Generando mundo...");
         StartCoroutine(UpdateWorldLoop());
     }
 
@@ -58,116 +70,131 @@ public class WorldGenerator : MonoBehaviour
     {
         if (player == null || generating) return;
 
-        Vector2Int playerChunk = new Vector2Int(
+        Vector2Int playerChunk = new(
             Mathf.FloorToInt(player.position.x / chunkSize),
             Mathf.FloorToInt(player.position.z / chunkSize)
         );
 
-        // no regenerar si el jugador no cambió de chunk
         if (playerChunk == lastPlayerChunk && activeChunks.Count > 0)
             return;
 
         lastPlayerChunk = playerChunk;
-        StartCoroutine(GenerateVisibleChunksAsync(playerChunk));
+        StartCoroutine(GenerateChunksAroundPlayer(playerChunk));
     }
 
-    private IEnumerator GenerateVisibleChunksAsync(Vector2Int center)
+    private IEnumerator GenerateChunksAroundPlayer(Vector2Int center)
     {
         generating = true;
 
-        HashSet<Vector2Int> needed = new();
+        List<Vector2Int> needed = new();
         for (int x = -worldRadius; x <= worldRadius; x++)
         {
             for (int z = -worldRadius; z <= worldRadius; z++)
             {
-                needed.Add(new Vector2Int(center.x + x, center.y + z));
+                if (x * x + z * z <= worldRadius * worldRadius)
+                    needed.Add(new Vector2Int(center.x + x, center.y + z));
             }
         }
 
-        // Quitar los chunks que quedaron fuera del rango
+        needed.Sort((a, b) => Vector2.Distance(a, center).CompareTo(Vector2.Distance(b, center)));
+
+        // 🔹 Eliminar chunks fuera de rango
         List<Vector2Int> toRemove = new();
         foreach (var kv in activeChunks)
-        {
             if (!needed.Contains(kv.Key))
                 toRemove.Add(kv.Key);
-        }
+
         foreach (var coord in toRemove)
         {
             ChunkPool.Instance.ReturnChunk(activeChunks[coord]);
             activeChunks.Remove(coord);
         }
 
-        // Generar los nuevos chunks progresivamente
-        foreach (Vector2Int coord in needed)
+        // 🔹 Generar gradualmente (1 chunk por frame)
+        foreach (var coord in needed)
         {
             if (activeChunks.ContainsKey(coord)) continue;
 
-            Vector3Int chunkCoord = new Vector3Int(coord.x, 0, coord.y);
-            byte[,,] data = GetOrGenerateChunkData(chunkCoord);
+            byte[,,] data = null;
 
-            GameObject chunkObj = ChunkPool.Instance.GetChunk(
-                new Vector3(coord.x * chunkSize, 0, coord.y * chunkSize),
-                transform
-            );
+            if (storage.HasData(coord))
+            {
+                data = storage.GetChunkData(coord);
+            }
+            else
+            {
+                Vector3Int chunkCoord = new(coord.x, 0, coord.y);
+                ChunkWorker.EnqueueJob(chunkCoord, chunkSize, noiseScale, heightMultiplier);
 
-            Chunk chunk = chunkObj.GetComponent<Chunk>();
-            chunk.material = chunkMaterial ?? AtlasBuilder.Instance.GetSharedMaterial();
-            chunk.SetData(data, chunkCoord, this);
+                // 🔸 Esperar a que el chunk esté listo sin bloquear Unity
+                yield return new WaitUntil(() => ChunkWorker.TryGetCompletedJob(out data, out var completedCoord)
+                    && completedCoord.x == chunkCoord.x && completedCoord.y == chunkCoord.z);
 
-            activeChunks[coord] = chunkObj;
+                if (data != null)
+                    storage.SaveChunk(coord, data);
+            }
 
-            yield return null; // 👈 evita congelar el frame
+            if (data != null)
+                CreateChunk(coord, data, chunkSize);
+
+            yield return null; // ⚡ genera uno por frame
         }
 
         generating = false;
     }
 
-    private byte[,,] GetOrGenerateChunkData(Vector3Int chunkCoord)
+    private void CreateChunk(Vector2Int coord, byte[,,] data, int lodSize)
     {
-        Vector2Int key = new Vector2Int(chunkCoord.x, chunkCoord.z);
-        if (chunkCache.TryGetValue(key, out byte[,,] cached))
-            return cached;
+        Vector3 pos = new(coord.x * chunkSize, 0, coord.y * chunkSize);
+        GameObject chunkObj = ChunkPool.Instance.GetChunk(pos, transform);
 
-        byte[,,] data = new byte[chunkSize, chunkSize, chunkSize];
+        Chunk chunk = chunkObj.GetComponent<Chunk>();
+        chunk.material = chunkMaterial ?? AtlasBuilder.Instance.GetSharedMaterial();
+        chunk.size = lodSize;
+        chunk.SetData(data, new Vector3Int(coord.x, 0, coord.y), this);
+        activeChunks[coord] = chunkObj;
 
-        int baseX = chunkCoord.x * chunkSize;
-        int baseZ = chunkCoord.z * chunkSize;
-
-        for (int x = 0; x < chunkSize; x++)
-        {
-            for (int z = 0; z < chunkSize; z++)
-            {
-                int h = Mathf.FloorToInt(Mathf.PerlinNoise(
-                    (baseX + x) * noiseScale,
-                    (baseZ + z) * noiseScale) * heightMultiplier);
-                h = Mathf.Clamp(h, 0, chunkSize - 1);
-
-                for (int y = 0; y < chunkSize; y++)
-                {
-                    if (y < h) data[x, y, z] = DIRT;
-                    else if (y == h) data[x, y, z] = GRASS;
-                    else data[x, y, z] = AIR;
-                }
-            }
-        }
-
-        chunkCache[key] = data;
-        return data;
+        Debug.Log($"🟩 Chunk generado en {coord.x}, {coord.y}");
     }
 
+    // ===============================================================
+    // LOD
+    // ===============================================================
+    private int GetLODChunkSize(float distance)
+    {
+        if (!enableLOD) return chunkSize;
+        if (distance <= lod1Distance) return chunkSize;
+        else if (distance <= lod2Distance) return chunkSize / 2;
+        else if (distance <= lod3Distance) return chunkSize / 4;
+        else return chunkSize / 8;
+    }
+
+    // ===============================================================
+    // Utilidades
+    // ===============================================================
     public byte GetBlockAt(Vector3Int worldPos)
     {
-        int chunkX = Mathf.FloorToInt((float)worldPos.x / chunkSize);
-        int chunkZ = Mathf.FloorToInt((float)worldPos.z / chunkSize);
+        int chunkX = Mathf.FloorToInt(worldPos.x / chunkSize);
+        int chunkZ = Mathf.FloorToInt(worldPos.z / chunkSize);
+        Vector2Int key = new(chunkX, chunkZ);
+
+        if (!storage.HasData(key))
+            return 0;
+
+        var data = storage.GetChunkData(key);
         int localX = Mathf.FloorToInt(Mathf.Repeat(worldPos.x, chunkSize));
         int localZ = Mathf.FloorToInt(Mathf.Repeat(worldPos.z, chunkSize));
         int localY = worldPos.y;
 
-        Vector2Int key = new Vector2Int(chunkX, chunkZ);
-        if (!chunkCache.TryGetValue(key, out byte[,,] data))
-            data = GetOrGenerateChunkData(new Vector3Int(chunkX, 0, chunkZ));
-
         if (localY < 0 || localY >= chunkSize) return 0;
         return data[localX, localY, localZ];
+    }
+
+    public byte[,,] GetChunkBlocks(Vector3Int chunkCoord)
+    {
+        Vector2Int key = new(chunkCoord.x, chunkCoord.z);
+        if (storage.HasData(key))
+            return storage.GetChunkData(key);
+        return null;
     }
 }

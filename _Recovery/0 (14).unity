@@ -530,10 +530,6 @@ MonoBehaviour:
   updateInterval: 0.25
   noiseScale: 0.08
   heightMultiplier: 8
-  enableLOD: 1
-  lod1Distance: 2
-  lod2Distance: 4
-  lod3Distance: 6
   player: {fileID: 850269025}
   chunkMaterial: {fileID: 2100000, guid: 2326066b157b24a42830194a11605b17, type: 2}
 --- !u!4 &500312126

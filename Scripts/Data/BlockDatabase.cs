@@ -6,8 +6,8 @@ using Newtonsoft.Json;
 public class BlockTextureInfo
 {
     public string[] top;
-    public string bottom;
-    public string side;
+    public string[] bottom;
+    public string[] side;
     public string all;
 }
 
@@ -29,41 +29,31 @@ public class BlockDatabase : MonoBehaviour
         if (Instance == null) Instance = this;
         else { Destroy(gameObject); return; }
 
-        Debug.Log("📂 BlockDatabase → Cargando BlockData.json...");
         TextAsset json = Resources.Load<TextAsset>("BlockData");
-
         if (json == null)
         {
-            Debug.LogError("❌ No encontré BlockData.json en Assets/Resources/");
+            Debug.LogError("❌ Falta BlockData.json en Resources/");
             return;
         }
 
         try
         {
             blocks = JsonConvert.DeserializeObject<Dictionary<string, BlockInfo>>(json.text);
-            Debug.Log($"✅ BlockDatabase → cargados {blocks.Count} bloques desde JSON");
+            Debug.Log($"✅ Cargados {blocks.Count} bloques desde JSON");
         }
         catch (System.Exception e)
         {
-            Debug.LogError("❌ Error al parsear BlockData.json: " + e.Message);
+            Debug.LogError("❌ Error al leer JSON: " + e.Message);
         }
     }
 
     public BlockInfo GetBlock(string id)
     {
-        if (blocks == null)
+        if (blocks == null || !blocks.ContainsKey(id))
         {
-            Debug.LogError("❌ BlockDatabase no está inicializado");
+            Debug.LogWarning($"⚠ Bloque '{id}' no encontrado");
             return null;
         }
-
-        if (blocks.ContainsKey(id))
-        {
-            Debug.Log($"🔍 BlockDatabase → devolviendo bloque: {id}");
-            return blocks[id];
-        }
-
-        Debug.LogWarning($"⚠️ Block {id} no encontrado en BlockData.json");
-        return null;
+        return blocks[id];
     }
 }

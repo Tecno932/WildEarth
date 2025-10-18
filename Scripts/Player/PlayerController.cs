@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // 🧩 Nuevo Input System
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
@@ -16,7 +16,7 @@ public class PlayerController : MonoBehaviour
     public float cameraHeight = 0.9f;
 
     private CharacterController cc;
-    private PlayerInputActions input; // 🧠 Input map generado automáticamente
+    private PlayerInputActions input; // ❌ NO inicializar aquí
     private Vector2 moveInput;
     private Vector2 lookInput;
     private bool jumpPressed;
@@ -29,7 +29,7 @@ public class PlayerController : MonoBehaviour
     {
         cc = GetComponent<CharacterController>();
 
-        // Inicializar input
+        // Inicializar input en Awake ✅
         input = new PlayerInputActions();
 
         // Movimiento (WASD)
@@ -49,8 +49,17 @@ public class PlayerController : MonoBehaviour
         input.Player.Run.canceled += _ => runPressed = false;
     }
 
-    void OnEnable() => input.Enable();
-    void OnDisable() => input.Disable();
+    void OnEnable()
+    {
+        if (input != null)
+            input.Enable();
+    }
+
+    void OnDisable()
+    {
+        if (input != null)
+            input.Disable();
+    }
 
     void Start()
     {
@@ -73,7 +82,7 @@ public class PlayerController : MonoBehaviour
         HandleMovement();
     }
 
-    void HandleLook()
+    private void HandleLook()
     {
         float mx = lookInput.x * mouseSensitivity;
         float my = lookInput.y * mouseSensitivity;
@@ -82,11 +91,12 @@ public class PlayerController : MonoBehaviour
 
         pitch -= my;
         pitch = Mathf.Clamp(pitch, -85f, 85f);
+
         if (cameraTransform != null)
             cameraTransform.localEulerAngles = new Vector3(pitch, 0f, 0f);
     }
 
-    void HandleMovement()
+    private void HandleMovement()
     {
         Vector3 move = (transform.right * moveInput.x + transform.forward * moveInput.y).normalized;
         float currentSpeed = runPressed ? runSpeed : walkSpeed;
