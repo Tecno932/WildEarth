@@ -1,0 +1,25 @@
+{
+  "grass": {
+    "name": "Grass Block",
+    "textures": {
+      "top": ["grass_top"],
+      "bottom": "dirt",
+      "side": "grass_side"
+    },
+    "solid": true
+  },
+  "dirt": {
+    "name": "Dirt",
+    "textures": {
+      "all": "dirt"
+    },
+    "solid": true
+  },
+  "stone": {
+    "name": "Stone",
+    "textures": {
+      "all": "stone"
+    },
+    "solid": true
+  }
+}
