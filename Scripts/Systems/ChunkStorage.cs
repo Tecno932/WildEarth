@@ -16,6 +16,24 @@ public class ChunkStorage : MonoBehaviour
         Debug.Log($"📂 Guardando chunks en: {savePath}");
     }
 
+    void OnApplicationQuit()
+    {
+        // 🔥 Borrar automáticamente todos los datos guardados al cerrar sesión
+        try
+        {
+            if (Directory.Exists(savePath))
+            {
+                Directory.Delete(savePath, true);
+                Directory.CreateDirectory(savePath);
+                Debug.Log("🧹 Todos los datos de chunks fueron eliminados al cerrar sesión.");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"❌ Error al borrar los datos de chunks: {e.Message}");
+        }
+    }
+
     public bool HasData(Vector2Int coord)
     {
         return memoryCache.ContainsKey(coord) || File.Exists(GetChunkPath(coord));
@@ -72,7 +90,6 @@ public class ChunkStorage : MonoBehaviour
     {
         List<byte> compressed = new();
 
-        // 🏷 Guardar versión del formato (para futuro)
         compressed.Add(1); // versión 1 del formato
 
         byte last = data[0, 0, 0];
@@ -108,8 +125,6 @@ public class ChunkStorage : MonoBehaviour
         }
 
         int index = 0;
-
-        // 🏷 Leer versión del formato
         byte version = bytes[index++];
         if (version != 1)
         {
@@ -119,7 +134,6 @@ public class ChunkStorage : MonoBehaviour
 
         List<byte> flat = new();
 
-        // Leer pares (valor, cantidad)
         while (index + 1 < bytes.Length)
         {
             byte value = bytes[index++];

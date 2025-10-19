@@ -2,17 +2,33 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
+/// <summary>
+/// WorldGenerator mejorado:
+/// - inicializa seed (customSeed opcional)
+/// - genera chunks alrededor del player (viewRadius)
+/// - opcional: precomputar y cachear un área mayor (precomputeRadius)
+/// </summary>
 public class WorldGenerator : MonoBehaviour
 {
     [Header("World Settings")]
     public int chunkSize = 16;
-    public int worldRadius = 171824; // tamaño total del mundo (en chunks)
+    public int worldRadius = 512; // tamaño total del mundo (en chunks)
     public int viewRadius = 8;       // radio de renderizado (en chunks)
     public float updateInterval = 0.25f;
 
     [Header("Noise Settings")]
     public float noiseScale = 0.08f;
     public float heightMultiplier = 16f;
+
+    [Header("Seed Settings")]
+    [Tooltip("Si es 0, se generará una semilla aleatoria.")]
+    public int customSeed = 0;
+
+    [Header("Precompute (cache)")]
+    [Tooltip("Si > 0, se encolan y guardan (no se instancian) chunks en un radio alrededor del origen (0,0).")]
+    public int precomputeRadius = 0;
+    [Tooltip("Cuántos jobs encolar por frame para precompute (para no saturar).")]
+    public int precomputeBatchSize = 256;
 
     [Header("References")]
     public Transform player;
@@ -25,9 +41,19 @@ public class WorldGenerator : MonoBehaviour
 
     void Start()
     {
-        WorldSettings.InitializeSeed();
+        // Inicializar seed global
+        if (customSeed != 0)
+        {
+            WorldSettings.InitializeSeed(customSeed);
+            Debug.Log($"🌍 Usando semilla personalizada: {customSeed}");
+        }
+        else
+        {
+            WorldSettings.InitializeSeed();
+            Debug.Log($"🌍 Semilla aleatoria generada: {WorldSettings.Seed}");
+        }
 
-        // Usar la API moderna si está disponible
+        // Encontrar / crear ChunkStorage
         storage = Object.FindFirstObjectByType<ChunkStorage>();
         if (storage == null)
         {
@@ -36,8 +62,11 @@ public class WorldGenerator : MonoBehaviour
             Debug.Log("[WorldGenerator] ChunkStorage creado en runtime.");
         }
 
+        // Iniciar worker
         ChunkWorker.StartWorker();
         Debug.Log("[WorldGenerator] ChunkWorker pedido para iniciar.");
+
+        // Esperar atlas y lanzar generación + precompute si está activado
         StartCoroutine(WaitForAtlasThenGenerate());
     }
 
@@ -54,6 +83,12 @@ public class WorldGenerator : MonoBehaviour
             AtlasBuilder.Instance.GetAtlasTexture() != null);
 
         Debug.Log("✅ Atlas listo. Generando mundo...");
+
+        // Si se quiere precomputar, lanzar la rutina de precompute (no bloqueante)
+        if (precomputeRadius > 0)
+            StartCoroutine(PrecomputeWorldData(precomputeRadius));
+
+        // Luego arrancar el loop de generación visible
         StartCoroutine(UpdateWorldLoop());
     }
 
@@ -93,7 +128,6 @@ public class WorldGenerator : MonoBehaviour
             {
                 Vector2Int coord = new Vector2Int(center.x + x, center.y + z);
 
-                // No salir del mundo
                 if (Mathf.Abs(coord.x) > worldRadius || Mathf.Abs(coord.y) > worldRadius)
                     continue;
 
@@ -101,10 +135,10 @@ public class WorldGenerator : MonoBehaviour
             }
         }
 
-        // Ordenar por distancia
+        // Priorizar por distancia
         needed.Sort((a, b) => Vector2.Distance(a, center).CompareTo(Vector2.Distance(b, center)));
 
-        // Remover chunks fuera del rango
+        // Remover chunks fuera del rango de visión
         List<Vector2Int> toRemove = new();
         foreach (var kv in activeChunks)
             if (!needed.Contains(kv.Key))
@@ -116,7 +150,7 @@ public class WorldGenerator : MonoBehaviour
             activeChunks.Remove(coord);
         }
 
-        // Generar nuevos chunks (uno por iteración/frame)
+        // Generar/instanciar los necesarios
         foreach (var coord in needed)
         {
             if (activeChunks.ContainsKey(coord)) continue;
@@ -131,15 +165,15 @@ public class WorldGenerator : MonoBehaviour
                 Vector3Int chunkCoord = new Vector3Int(coord.x, 0, coord.y);
                 ChunkWorker.EnqueueJob(chunkCoord, chunkSize, noiseScale, heightMultiplier);
 
-                // Espera hasta que se reciba un trabajo completado del mismo chunk
-                float timeoutTime = Time.realtimeSinceStartup + 10f; // timeout por chunk
+                // Espera segura por el resultado (timeout)
+                float timeoutTime = Time.realtimeSinceStartup + 10f;
                 bool gotIt = false;
 
                 while (Time.realtimeSinceStartup < timeoutTime)
                 {
                     if (ChunkWorker.TryGetCompletedJob(out data, out var completedCoord))
                     {
-                        // completedCoord.x == chunkCoord.x && completedCoord.y == chunkCoord.z
+                        // TryGetCompletedJob devuelve (x,z) => completedCoord.y es z
                         if (completedCoord.x == chunkCoord.x && completedCoord.y == chunkCoord.z)
                         {
                             gotIt = true;
@@ -147,21 +181,22 @@ public class WorldGenerator : MonoBehaviour
                         }
                         else
                         {
-                            // Si el trabajo completado corresponde a otro chunk,
-                            // guardarlo inmediatamente (si storage existe) para no perderlo.
+                            // Guardar resultados de otros chunks que lleguen antes
                             if (data != null && storage != null)
                             {
                                 Vector2Int otherKey = new Vector2Int(completedCoord.x, completedCoord.y);
-                                storage.SaveChunk(otherKey, data);
-                                Debug.Log($"[WorldGenerator] Resultado de otro chunk ({otherKey.x},{otherKey.y}) guardado mientras esperamos.");
+                                if (!storage.HasData(otherKey))
+                                {
+                                    storage.SaveChunk(otherKey, data);
+                                    Debug.Log($"[WorldGenerator] Guardado resultado de chunk {otherKey.x},{otherKey.y} recibido mientras esperábamos.");
+                                }
                             }
-                            // continuar esperando el que pedimos
                             data = null;
                         }
                     }
                     else
                     {
-                        // nada listo aún: yield un frame
+                        // no hay completados -> esperar un frame
                         yield return null;
                     }
                 }
@@ -179,7 +214,7 @@ public class WorldGenerator : MonoBehaviour
             if (data != null)
                 CreateChunk(coord, data, chunkSize);
 
-            // generamos 1 por frame para no bloquear rendering
+            // generar 1 por frame para no bloquear rendering
             yield return null;
         }
 
@@ -206,7 +241,84 @@ public class WorldGenerator : MonoBehaviour
         Debug.Log($"🟩 Chunk generado en {coord.x}, {coord.y}");
     }
 
-    // 🔸 Método necesario para el sistema de vecinos de Chunk.cs
+    // ===============================================================
+    // PRECOMPUTE: encola muchos jobs y los guarda en storage (no instantiate)
+    // ===============================================================
+    private IEnumerator PrecomputeWorldData(int radius)
+    {
+        if (storage == null)
+        {
+            Debug.LogWarning("[WorldGenerator] No hay ChunkStorage para precompute. Abortando precompute.");
+            yield break;
+        }
+
+        Debug.Log($"[WorldGenerator] Iniciando precompute radius={radius} (esto puede tardar).");
+
+        // Crear lista de coords a encolar (alrededor del origen). Podés cambiar origen si querés.
+        List<Vector2Int> allCoords = new();
+        for (int x = -radius; x <= radius; x++)
+            for (int z = -radius; z <= radius; z++)
+            {
+                Vector2Int coord = new Vector2Int(x, z);
+                if (Mathf.Abs(coord.x) > worldRadius || Mathf.Abs(coord.y) > worldRadius) continue;
+                if (!storage.HasData(coord))
+                    allCoords.Add(coord);
+            }
+
+        // Encolar en batches (para no saturar memoria y CPU)
+        int idx = 0;
+        while (idx < allCoords.Count)
+        {
+            int end = Mathf.Min(idx + precomputeBatchSize, allCoords.Count);
+            for (int i = idx; i < end; i++)
+            {
+                Vector2Int c = allCoords[i];
+                ChunkWorker.EnqueueJob(new Vector3Int(c.x, 0, c.y), chunkSize, noiseScale, heightMultiplier);
+            }
+            idx = end;
+
+            // Recibir resultados y guardarlos
+            float receiveTimeout = Time.realtimeSinceStartup + 5f; // espera corta por batch
+            while (Time.realtimeSinceStartup < receiveTimeout)
+            {
+                if (ChunkWorker.TryGetCompletedJob(out var data, out var coord))
+                {
+                    Vector2Int key = new Vector2Int(coord.x, coord.y);
+                    if (data != null && !storage.HasData(key))
+                    {
+                        storage.SaveChunk(key, data);
+                    }
+                }
+                else
+                {
+                    // No hay más completados por ahora
+                    break;
+                }
+            }
+
+            // yield un frame para mantener editor responsivo
+            yield return null;
+        }
+
+        // finalmente vaciar la cola de completados restante
+        while (true)
+        {
+            if (ChunkWorker.TryGetCompletedJob(out var data, out var coord))
+            {
+                Vector2Int key = new Vector2Int(coord.x, coord.y);
+                if (data != null && !storage.HasData(key))
+                    storage.SaveChunk(key, data);
+            }
+            else break;
+
+            // cede ocasionalmente
+            yield return null;
+        }
+
+        Debug.Log("[WorldGenerator] Precompute finalizado.");
+    }
+
+    // Método para que otros sistemas pidan datos de chunks (neighbouring)
     public byte[,,] GetChunkBlocks(Vector3Int chunkCoord)
     {
         Vector2Int key = new Vector2Int(chunkCoord.x, chunkCoord.z);

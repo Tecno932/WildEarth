@@ -10,13 +10,17 @@ public class PlayerController : MonoBehaviour
     public float jumpForce = 7f;
     public float gravity = 20f;
 
+    [Header("Flight")]
+    public float flightSpeed = 15f;
+    public float doubleTapDelay = 0.3f;
+
     [Header("Mouse Look")]
     public float mouseSensitivity = 2.0f;
     public Transform cameraTransform;
     public float cameraHeight = 0.9f;
 
     private CharacterController cc;
-    private PlayerInputActions input; // ❌ NO inicializar aquí
+    private PlayerInputActions input;
     private Vector2 moveInput;
     private Vector2 lookInput;
     private bool jumpPressed;
@@ -25,41 +29,30 @@ public class PlayerController : MonoBehaviour
     private float verticalVelocity;
     private float pitch;
 
+    private bool isFlying = false;
+    private bool waitingForSecondJump = false;
+    private float lastJumpTime = 0f;
+
     void Awake()
     {
         cc = GetComponent<CharacterController>();
-
-        // Inicializar input en Awake ✅
         input = new PlayerInputActions();
 
-        // Movimiento (WASD)
         input.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
         input.Player.Move.canceled += _ => moveInput = Vector2.zero;
 
-        // Mouse look
         input.Player.Look.performed += ctx => lookInput = ctx.ReadValue<Vector2>();
         input.Player.Look.canceled += _ => lookInput = Vector2.zero;
 
-        // Jump
         input.Player.Jump.performed += _ => jumpPressed = true;
         input.Player.Jump.canceled += _ => jumpPressed = false;
 
-        // Run
         input.Player.Run.performed += _ => runPressed = true;
         input.Player.Run.canceled += _ => runPressed = false;
     }
 
-    void OnEnable()
-    {
-        if (input != null)
-            input.Enable();
-    }
-
-    void OnDisable()
-    {
-        if (input != null)
-            input.Disable();
-    }
+    void OnEnable() => input?.Enable();
+    void OnDisable() => input?.Disable();
 
     void Start()
     {
@@ -88,7 +81,6 @@ public class PlayerController : MonoBehaviour
         float my = lookInput.y * mouseSensitivity;
 
         transform.Rotate(Vector3.up * mx);
-
         pitch -= my;
         pitch = Mathf.Clamp(pitch, -85f, 85f);
 
@@ -101,6 +93,43 @@ public class PlayerController : MonoBehaviour
         Vector3 move = (transform.right * moveInput.x + transform.forward * moveInput.y).normalized;
         float currentSpeed = runPressed ? runSpeed : walkSpeed;
 
+        // Doble salto para activar vuelo
+        if (jumpPressed && cc.isGrounded)
+        {
+            if (!waitingForSecondJump)
+            {
+                waitingForSecondJump = true;
+                lastJumpTime = Time.time;
+            }
+            else if (Time.time - lastJumpTime <= doubleTapDelay)
+            {
+                isFlying = !isFlying;
+                waitingForSecondJump = false;
+            }
+        }
+
+        if (waitingForSecondJump && Time.time - lastJumpTime > doubleTapDelay)
+            waitingForSecondJump = false;
+
+        // ========================
+        // ✈️ MODO VUELO
+        // ========================
+        if (isFlying)
+        {
+            Vector3 flyDir = Vector3.zero;
+            if (Keyboard.current.spaceKey.isPressed)
+                flyDir += Vector3.up;
+            if (Keyboard.current.leftCtrlKey.isPressed)
+                flyDir += Vector3.down;
+
+            Vector3 moveDir = (transform.forward * moveInput.y + transform.right * moveInput.x + flyDir).normalized;
+            cc.Move(moveDir * flightSpeed * Time.deltaTime);
+            return;
+        }
+
+        // ========================
+        // 🚶 MODO NORMAL
+        // ========================
         if (cc.isGrounded)
         {
             verticalVelocity = -1f;

@@ -13,14 +13,10 @@ public static class ChunkWorker
     {
         public Vector3Int coord;
         public int size;
-        public float noiseScale;
         public float heightMultiplier;
         public byte[,,] result;
     }
 
-    // ===========================================================
-    // CONTROL DE THREAD
-    // ===========================================================
     public static void StartWorker()
     {
         if (running) return;
@@ -31,7 +27,6 @@ public static class ChunkWorker
             Name = "ChunkWorkerThread"
         };
         workerThread.Start();
-
         Debug.Log("[ChunkWorker] Hilo de generación iniciado.");
     }
 
@@ -51,7 +46,6 @@ public static class ChunkWorker
             {
                 coord = coord,
                 size = size,
-                noiseScale = noiseScale,
                 heightMultiplier = heightMultiplier
             });
         }
@@ -76,15 +70,11 @@ public static class ChunkWorker
         return false;
     }
 
-    // ===========================================================
-    // PROCESAMIENTO EN HILO SEPARADO
-    // ===========================================================
     private static void ProcessJobs()
     {
         while (running)
         {
             Job job = null;
-
             lock (jobQueue)
             {
                 if (jobQueue.Count > 0)
@@ -93,8 +83,7 @@ public static class ChunkWorker
 
             if (job != null)
             {
-                job.result = GenerateChunk(job.coord, job.size, job.noiseScale, job.heightMultiplier);
-
+                job.result = GenerateChunk(job.coord, job.size, job.heightMultiplier);
                 lock (completedJobs)
                     completedJobs.Add(job);
             }
@@ -103,57 +92,23 @@ public static class ChunkWorker
         }
     }
 
-    // ===========================================================
-    // GENERACIÓN DE TERRENO COHERENTE ENTRE CHUNKS
-    // ===========================================================
-    private static byte[,,] GenerateChunk(Vector3Int coord, int size, float noiseScale, float heightMultiplier)
+    private static byte[,,] GenerateChunk(Vector3Int coord, int size, float heightMultiplier)
     {
         byte[,,] data = new byte[size, size, size];
 
-        // Offset global único para este mundo
-        Vector2 offset = WorldSettings.Offset;
-        int seed = WorldSettings.Seed;
-
         int baseX = coord.x * size;
         int baseZ = coord.z * size;
-
-        // Generador pseudoaleatorio basado en la seed
-        System.Random rng = new(seed);
-        float seedOffsetX = rng.Next(-999999, 999999);
-        float seedOffsetZ = rng.Next(-999999, 999999);
 
         for (int x = 0; x < size; x++)
         {
             for (int z = 0; z < size; z++)
             {
-                // Coordenadas globales continuas
-                float worldX = (baseX + x + offset.x + seedOffsetX);
-                float worldZ = (baseZ + z + offset.y + seedOffsetZ);
+                float worldX = baseX + x;
+                float worldZ = baseZ + z;
 
-                // ✅ Ruido multi-octava coherente (como Minecraft)
-                float amplitude = 1f;
-                float frequency = 1f;
-                float persistence = 0.5f;
-                float noiseValue = 0f;
-                float normalization = 0f;
-
-                for (int o = 0; o < 4; o++) // 4 octavas es buen balance
-                {
-                    float sampleX = worldX * noiseScale * frequency;
-                    float sampleZ = worldZ * noiseScale * frequency;
-                    float perlin = Mathf.PerlinNoise(sampleX, sampleZ);
-
-                    noiseValue += perlin * amplitude;
-                    normalization += amplitude;
-
-                    amplitude *= persistence;
-                    frequency *= 2f;
-                }
-
-                noiseValue /= normalization;
+                // ✅ Ruido global coherente
+                float noiseValue = Noise.GetGlobal(worldX, worldZ);
                 int terrainHeight = Mathf.FloorToInt(noiseValue * heightMultiplier);
-
-                // Clamping seguro
                 terrainHeight = Mathf.Clamp(terrainHeight, 1, size - 2);
 
                 for (int y = 0; y < size; y++)
