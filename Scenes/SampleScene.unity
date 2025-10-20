@@ -529,7 +529,7 @@ MonoBehaviour:
   worldRadius: 512
   viewRadius: 8
   updateInterval: 0.25
-  noiseScale: 0.5
+  noiseScale: 8
   heightMultiplier: 32
   customSeed: 24432
   precomputeRadius: 0

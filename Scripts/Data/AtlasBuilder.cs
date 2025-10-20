@@ -29,36 +29,39 @@ public class AtlasBuilder : MonoBehaviour
         BuildAtlas();
     }
 
-    private void BuildAtlas()
+private void BuildAtlas()
+{
+    List<Texture2D> textures = new();
+    HashSet<string> used = new();
+
+    foreach (var kvp in BlockDatabase.Instance.blocks)
     {
-        List<Texture2D> textures = new();
-        HashSet<string> used = new();
-
-        foreach (var kvp in BlockDatabase.Instance.blocks)
-        {
-            var texs = kvp.Value.textures;
-            AddTextureIfExists(texs.all, used, textures);
-            AddTexturesIfExist(texs.top, used, textures);
-            AddTexturesIfExist(texs.bottom, used, textures);
-            AddTexturesIfExist(texs.side, used, textures);
-        }
-
-        atlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, false);
-        Rect[] rects = atlas.PackTextures(textures.ToArray(), padding, atlasSize);
-
-        atlas.filterMode = FilterMode.Point;
-        atlas.wrapMode = TextureWrapMode.Repeat;
-
-        uvRects = new Dictionary<string, Rect>();
-        for (int i = 0; i < textures.Count; i++)
-        {
-            string name = textures[i].name;
-            uvRects[name] = rects[i];
-        }
-
-        sharedMaterial.mainTexture = atlas;
-        sharedMaterial.mainTexture.wrapMode = TextureWrapMode.Repeat;
+        var texs = kvp.Value.textures;
+        AddTextureIfExists(texs.all, used, textures);
+        AddTexturesIfExist(texs.top, used, textures);
+        AddTexturesIfExist(texs.bottom, used, textures);
+        AddTexturesIfExist(texs.side, used, textures);
+        AddTexturesIfExist(texs.overlay, used, textures); // 🟢 << NUEVA LÍNEA
     }
+
+    atlas = new Texture2D(atlasSize, atlasSize, TextureFormat.RGBA32, false);
+    Rect[] rects = atlas.PackTextures(textures.ToArray(), padding, atlasSize);
+
+    atlas.filterMode = FilterMode.Point;
+    atlas.wrapMode = TextureWrapMode.Repeat;
+
+    uvRects = new Dictionary<string, Rect>();
+    for (int i = 0; i < textures.Count; i++)
+    {
+        string name = textures[i].name;
+        uvRects[name] = rects[i];
+    }
+
+    sharedMaterial.mainTexture = atlas;
+    sharedMaterial.mainTexture.wrapMode = TextureWrapMode.Repeat;
+
+    Debug.Log($"✅ Atlas generado con {textures.Count} texturas.");
+}
 
     private void AddTextureIfExists(string id, HashSet<string> used, List<Texture2D> list)
     {

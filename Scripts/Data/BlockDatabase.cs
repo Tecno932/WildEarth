@@ -8,6 +8,7 @@ public class BlockTextureInfo
     public string[] top;
     public string[] bottom;
     public string[] side;
+    public string[] overlay;
     public string all;
 }
 

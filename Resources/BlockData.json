@@ -2,9 +2,10 @@
   "grass": {
     "name": "Grass Block",
     "textures": {
-      "top": ["grass_top"],
+      "top": ["grass_top", "grass_top1", "grass_top2", "grass_top3", "grass_top4", "grass_top5", "grass_top6"],
       "bottom": ["dirt"],
-      "side": ["grass_side"]
+      "side": ["grass_side"],
+      "overlay": ["grass_side_overlay"]
     },
     "solid": true
   },
