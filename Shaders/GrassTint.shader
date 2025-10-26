@@ -1,29 +1,37 @@
-Shader "URP/GrassTint"
+Shader "URP/GrassTintFixed"
 {
     Properties
     {
-        _MainTex("Atlas Texture", 2D) = "white" {}
-        _TintColor("Grass Tint Color", Color) = (0.25, 0.85, 0.35, 1)
-        _TintStrength("Tint Strength", Range(0,1)) = 1.0
-        _Cutoff("Alpha Cutoff", Range(0,1)) = 0.4
+        _BaseMap ("Atlas Texture", 2D) = "white" {}
+        _TintColor ("Tint Color", Color) = (0.57, 0.74, 0.35, 1)
+        _TintStrength ("Tint Strength", Range(0,1)) = 1.0
+        _AlphaCutoff ("Alpha Cutoff", Range(0,1)) = 0.01
+
+        // Ajustes de detección
+        _GrayTolerance ("Gray tolerance", Range(0,1)) = 0.25
+        _MinBrightness ("Min Brightness", Range(0,1)) = 0.20
+        _MaxBrightness ("Max Brightness", Range(0,1)) = 0.95
     }
 
     SubShader
     {
         Tags
         {
-            "RenderType"="Transparent"
-            "Queue"="Transparent"
+            "RenderPipeline"="UniversalRenderPipeline"
+            "RenderType"="Opaque"
+            "Queue"="Geometry"
         }
+
+        LOD 200
 
         Pass
         {
             Name "ForwardLit"
-            Tags{ "LightMode" = "UniversalForward" }
+            Tags { "LightMode"="UniversalForward" }
 
-            Blend SrcAlpha OneMinusSrcAlpha
-            ZWrite Off
             Cull Off
+            ZWrite On
+            Blend One Zero
 
             HLSLPROGRAM
             #pragma vertex vert
@@ -42,43 +50,56 @@ Shader "URP/GrassTint"
                 float2 uv : TEXCOORD0;
             };
 
-            // ✅ URP-compatible texture declarations
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
-            float4 _MainTex_ST;
+            TEXTURE2D(_BaseMap);
+            SAMPLER(sampler_BaseMap);
 
             float4 _TintColor;
             float _TintStrength;
-            float _Cutoff;
+            float _AlphaCutoff;
+            float _GrayTolerance;
+            float _MinBrightness;
+            float _MaxBrightness;
 
             Varyings vert(Attributes IN)
             {
                 Varyings OUT;
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
-                OUT.uv = TRANSFORM_TEX(IN.uv, _MainTex);
+                OUT.uv = IN.uv;
                 return OUT;
             }
 
             half4 frag(Varyings IN) : SV_Target
             {
-                // 🟢 Leer el color del atlas
-                half4 col = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, IN.uv);
+                half4 col = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
+                clip(col.a - _AlphaCutoff);
 
-                // 🧮 Calcular qué tan gris/blanco es el pixel
-                half gray = dot(col.rgb, half3(0.333, 0.333, 0.333));
+                // --- Cálculo de diferencia entre canales ---
+                float3 rgb = col.rgb;
+                float diff = abs(rgb.r - rgb.g) + abs(rgb.g - rgb.b) + abs(rgb.b - rgb.r);
 
-                // 🟢 Generar máscara (solo partes claras se tiñen)
-                half mask = saturate((gray - 0.5) * 2.0);
+                // --- Promedio de brillo ---
+                float brightness = (rgb.r + rgb.g + rgb.b) / 3.0;
 
-                // 🌿 Mezclar verde según intensidad de gris
-                half3 tinted = lerp(col.rgb, _TintColor.rgb * gray, mask * _TintStrength);
+                // --- Detección más permisiva ---
+                bool couldBeGrass = (diff < _GrayTolerance) && 
+                                    (brightness > _MinBrightness) && 
+                                    (brightness < _MaxBrightness);
 
-                // ❌ Descartar si es transparente
-                if (col.a < _Cutoff) discard;
+                if (couldBeGrass)
+                {
+                    // Variación suave según brillo
+                    float variation = saturate((brightness - 0.5) * 1.5);
+                    float3 grassTint = lerp(_TintColor.rgb * 0.85, _TintColor.rgb * 1.15, variation);
 
-                return half4(tinted, col.a);
+                    // Aplicar color
+                    col.rgb = lerp(col.rgb, grassTint, _TintStrength);
+                }
+
+                return half4(col.rgb, 1.0);
             }
             ENDHLSL
         }
     }
+
+    FallBack Off
 }

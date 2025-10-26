@@ -714,10 +714,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 66aac740883759c598167dfb0d1dd5c2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AtlasBuilder
-  manualAtlas: {fileID: 2800000, guid: 83180c83a45b9194993bbfb6e9d304c7, type: 3}
-  cellSize: 16
-  columns: 30
-  defaultMaterial: {fileID: 2100000, guid: 92f6232761af948498b18d6314b23b12, type: 2}
+  atlasSize: 2048
+  padding: 2
+  defaultMaterial: {fileID: 2100000, guid: b08ec9eb5087a7144ba805704f9b3934, type: 2}
   grassTintMaterial: {fileID: 2100000, guid: 92f6232761af948498b18d6314b23b12, type: 2}
 --- !u!114 &1324246602
 MonoBehaviour:

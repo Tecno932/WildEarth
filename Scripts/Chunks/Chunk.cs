@@ -4,10 +4,8 @@ using UnityEngine;
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
 public class Chunk : MonoBehaviour
 {
-    [HideInInspector] public int size = 16;
+    public int size = 16;
     public float blockSize = 1f;
-    [HideInInspector] public byte[,,] blocks;
-    public Material material;
 
     private MeshFilter mf;
     private MeshRenderer mr;
@@ -16,6 +14,10 @@ public class Chunk : MonoBehaviour
     public WorldGenerator worldRef;
     public Vector3Int chunkCoord;
 
+    private Material defaultMat;
+    private Material tintedMat;
+
+    private byte[,,] blocks;
     private Dictionary<Vector3Int, byte[,,]> neighborCache = new();
 
     void Awake()
@@ -25,23 +27,27 @@ public class Chunk : MonoBehaviour
         mc = GetComponent<MeshCollider>();
     }
 
+    public Material material
+    {
+        get => mr != null ? mr.sharedMaterial : null;
+        set { if (mr != null) mr.sharedMaterial = value; }
+    }
+
     public void SetData(byte[,,] data, Vector3Int coord, WorldGenerator world)
+    {
+        Initialize(data, coord, world);
+    }
+
+    public void Initialize(byte[,,] data, Vector3Int coord, WorldGenerator world)
     {
         blocks = data;
         chunkCoord = coord;
         worldRef = world;
         size = data.GetLength(0);
 
-        if (material != null)
-            mr.sharedMaterial = material;
-        else if (AtlasBuilder.Instance != null)
-            mr.sharedMaterial = AtlasBuilder.Instance.GetSharedMaterial();
-
-        if (mr.sharedMaterial != null && mr.sharedMaterial.mainTexture != null)
-        {
-            mr.sharedMaterial.mainTexture.filterMode = FilterMode.Point;
-            mr.sharedMaterial.mainTexture.wrapMode = TextureWrapMode.Repeat;
-        }
+        // 🔹 Obtener materiales desde el AtlasBuilder
+        defaultMat = AtlasBuilder.Instance.GetMaterialForBlock("stone");
+        tintedMat = AtlasBuilder.Instance.GetMaterialForBlock("grass");
 
         CacheNeighbors();
         BuildMesh();
@@ -51,77 +57,97 @@ public class Chunk : MonoBehaviour
     {
         neighborCache.Clear();
         Vector3Int[] dirs = {
-            new Vector3Int(-1, 0, 0), new Vector3Int(1, 0, 0),
-            new Vector3Int(0, 0, -1), new Vector3Int(0, 0, 1)
+            new(-1, 0, 0), new(1, 0, 0),
+            new(0, 0, -1), new(0, 0, 1)
         };
 
         foreach (var dir in dirs)
         {
             Vector3Int nc = chunkCoord + dir;
-            var neighbor = worldRef.GetChunkBlocks(nc);
-            neighborCache[nc - chunkCoord] = neighbor ?? new byte[size, size, size];
+            neighborCache[nc - chunkCoord] = worldRef.GetChunkBlocks(nc) ?? new byte[size, size, size];
         }
     }
 
     private void BuildMesh()
     {
-        List<Vector3> verts = new();
-        List<int> tris = new();
-        List<Vector2> uvs = new();
+        List<Vector3> vertsDefault = new();
+        List<int> trisDefault = new();
+        List<Vector2> uvsDefault = new();
+
+        List<Vector3> vertsTinted = new();
+        List<int> trisTinted = new();
+        List<Vector2> uvsTinted = new();
 
         for (int x = 0; x < size; x++)
+        for (int y = 0; y < size; y++)
+        for (int z = 0; z < size; z++)
         {
-            for (int y = 0; y < size; y++)
+            byte block = blocks[x, y, z];
+            if (block == 0) continue;
+
+            BlockInfo info = BlockDatabase.Instance.GetBlock(GetBlockName(block));
+            bool isTinted = info.name.Contains("grass") || info.name.Contains("vine") || info.name.Contains("leaves");
+
+            var verts = isTinted ? vertsTinted : vertsDefault;
+            var tris = isTinted ? trisTinted : trisDefault;
+            var uvs = isTinted ? uvsTinted : uvsDefault;
+
+            for (int face = 0; face < 6; face++)
             {
-                for (int z = 0; z < size; z++)
+                Vector3Int neighbor = GetNeighborOffset(face);
+                byte neighborBlock = GetBlockGlobal(x + neighbor.x, y + neighbor.y, z + neighbor.z);
+                if (neighborBlock != 0) continue;
+
+                AddFace(block, x, y, z, face, verts, tris, uvs);
+
+                if (info.textures.overlay != null && info.textures.overlay.Length > 0 && face is 0 or 1 or 4 or 5)
                 {
-                    byte block = blocks[x, y, z];
-                    if (block == 0) continue;
-
-                    for (int face = 0; face < 6; face++)
-                    {
-                        Vector3Int neighbor = GetNeighborOffset(face);
-                        byte neighborBlock = GetBlockGlobal(x + neighbor.x, y + neighbor.y, z + neighbor.z);
-                        if (neighborBlock != 0)
-                            continue;
-
-                        // 🟢 Generar cara normal
-                        AddFace(block, x, y, z, face, verts, tris, uvs);
-
-                        // 🌿 Si el bloque tiene overlay definido, aplicarlo solo en las caras laterales
-                        BlockInfo info = BlockDatabase.Instance.GetBlock(GetBlockName(block));
-                        if (info != null && info.textures.overlay != null && info.textures.overlay.Length > 0)
-                        {
-                            // Caras laterales: 0 = left, 1 = right, 4 = back, 5 = front
-                            if (face is 0 or 1 or 4 or 5)
-                            {
-                                string overlayTex = info.textures.overlay[0];
-                                AddOverlayFace(x, y, z, face, verts, tris, uvs, overlayTex);
-                            }
-                        }
-                    }
+                    string overlayTex = info.textures.overlay[0];
+                    AddOverlayFace(x, y, z, face, verts, tris, uvs, overlayTex);
                 }
             }
         }
 
-        Mesh mesh = new()
-        {
-            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32
-        };
+        Mesh mesh = new() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        mesh.subMeshCount = 2;
 
-        mesh.SetVertices(verts);
-        mesh.SetTriangles(tris, 0);
-        mesh.SetUVs(0, uvs);
+        var vertsCombined = new List<Vector3>();
+        vertsCombined.AddRange(vertsDefault);
+        vertsCombined.AddRange(vertsTinted);
+
+        mesh.SetVertices(vertsCombined);
+        mesh.SetTriangles(trisDefault, 0);
+        mesh.SetTriangles(ShiftIndices(trisTinted, vertsDefault.Count), 1);
+        mesh.SetUVs(0, CombineUVs(uvsDefault, uvsTinted));
+
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
         mf.sharedMesh = mesh;
         mc.sharedMesh = mesh;
+
+        // 🟩 Usa ambos materiales en el mismo MeshRenderer
+        mr.sharedMaterials = new[] { defaultMat, tintedMat };
     }
 
-    // =========================
-    // 🧱 Capa base del bloque
-    // =========================
+    private static List<int> ShiftIndices(List<int> list, int offset)
+    {
+        List<int> shifted = new(list.Count);
+        foreach (int i in list) shifted.Add(i + offset);
+        return shifted;
+    }
+
+    private static List<Vector2> CombineUVs(List<Vector2> a, List<Vector2> b)
+    {
+        List<Vector2> all = new(a.Count + b.Count);
+        all.AddRange(a);
+        all.AddRange(b);
+        return all;
+    }
+
+    // ============================
+    // 🧩 Generación de caras
+    // ============================
     private void AddFace(byte blockId, int x, int y, int z, int face,
                          List<Vector3> verts, List<int> tris, List<Vector2> uvs)
     {
@@ -156,9 +182,6 @@ public class Chunk : MonoBehaviour
         AddFaceUVs(face, uvRect, uvs);
     }
 
-    // =========================
-    // 🌿 Capa overlay del pasto
-    // =========================
     private void AddOverlayFace(int x, int y, int z, int face,
                                 List<Vector3> verts, List<int> tris, List<Vector2> uvs,
                                 string overlayTex)
@@ -167,7 +190,6 @@ public class Chunk : MonoBehaviour
         Vector3 basePos = new(x, y, z);
         Vector3[] faceVerts = GetFaceVertices(basePos, face);
 
-        // 🔹 desplazamiento leve hacia afuera para evitar Z-fighting
         Vector3 offset = GetNormal(face) * 0.001f;
         for (int i = 0; i < 4; i++)
             faceVerts[i] += offset;
@@ -181,7 +203,6 @@ public class Chunk : MonoBehaviour
         tris.Add(vertIndex + 2);
         tris.Add(vertIndex + 3);
 
-        // ⚠️ Obtener solo el UV del overlay específico (no todos los “side”)
         Rect uvRect = AtlasBuilder.Instance.GetUV(overlayTex);
         AddFaceUVs(face, uvRect, uvs);
     }
@@ -190,42 +211,12 @@ public class Chunk : MonoBehaviour
     {
         Vector2[] faceUVs = face switch
         {
-            0 => new[] {
-                new Vector2(uvRect.xMax, uvRect.yMin),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMin, uvRect.yMax),
-                new Vector2(uvRect.xMin, uvRect.yMin)
-            },
-            1 => new[] {
-                new Vector2(uvRect.xMin, uvRect.yMin),
-                new Vector2(uvRect.xMin, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMin)
-            },
-            2 => new[] {
-                new Vector2(uvRect.xMin, uvRect.yMin),
-                new Vector2(uvRect.xMax, uvRect.yMin),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMin, uvRect.yMax)
-            },
-            3 => new[] {
-                new Vector2(uvRect.xMin, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMin),
-                new Vector2(uvRect.xMin, uvRect.yMin)
-            },
-            4 => new[] {
-                new Vector2(uvRect.xMax, uvRect.yMin),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMin, uvRect.yMax),
-                new Vector2(uvRect.xMin, uvRect.yMin)
-            },
-            5 => new[] {
-                new Vector2(uvRect.xMin, uvRect.yMin),
-                new Vector2(uvRect.xMin, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMax),
-                new Vector2(uvRect.xMax, uvRect.yMin)
-            },
+            0 => new[] { new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMin) },
+            1 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin) },
+            2 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax) },
+            3 => new[] { new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMin) },
+            4 => new[] { new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMin) },
+            5 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin) },
             _ => null
         };
         uvs.AddRange(faceUVs);

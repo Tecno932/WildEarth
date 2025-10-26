@@ -1,26 +1,69 @@
 {
-  "grass": {
-    "name": "Grass Block",
-    "textures": {
-      "top": ["grass_top", "grass_top1", "grass_top2", "grass_top3", "grass_top4", "grass_top5", "grass_top6"],
-      "bottom": ["dirt"],
-      "side": ["grass_side"],
-      "overlay": ["grass_side_overlay"]
-    },
-    "solid": true
+"grass": {
+  "name": "grass",
+  "displayName": "Grass Block",
+  "material": "GrassTint",
+  "category": "Soil",
+  "solid": true,
+  "tool": "Shovel",
+  "hardness": 0.6,
+  "textures": {
+    "top": ["grass_top", "grass_top1", "grass_top2", "grass_top3"],
+    "bottom": ["dirt"],
+    "side": ["grass_side"],
+    "overlay": ["grass_side_overlay"]
+  }
   },
-  "dirt": {
-    "name": "Dirt",
+"dirt": {
+    "name": "dirt",
+    "displayName": "Dirt",
+    "material": "Default",
+    "category": "Soil",
+    "solid": true,
+    "tool": "Shovel",
+    "hardness": 0.5,
     "textures": {
       "all": "dirt"
     },
-    "solid": true
+    "variants": ["dirt", "dirt1", "dirt2", "dirt3"]
+  },
+  "gravel": {
+    "name": "gravel",
+    "displayName": "Gravel",
+    "material": "Default",
+    "category": "Soil",
+    "solid": true,
+    "tool": "Shovel",
+    "hardness": 0.6,
+    "textures": {
+      "all": "gravel"
+    },
+    "variants": ["gravel", "gravel1", "gravel2", "gravel3"]
+  },
+  "sand": {
+    "name": "sand",
+    "displayName": "Sand",
+    "material": "Default",
+    "category": "Soil",
+    "solid": true,
+    "tool": "Shovel",
+    "hardness": 0.4,
+    "textures": {
+      "all": "sand"
+    },
+    "variants": ["sand", "sand1", "sand2"]
   },
   "stone": {
-    "name": "Stone",
+    "name": "stone",
+    "displayName": "Stone",
+    "material": "Default",
+    "category": "Rock",
+    "solid": true,
+    "tool": "Pickaxe",
+    "hardness": 2.0,
     "textures": {
       "all": "stone"
     },
-    "solid": true
+    "variants": ["stone", "stone1", "limestone", "andesite", "granite"]
   }
 }
