@@ -1,35 +1,28 @@
-Shader "URP/GrassTintFixed"
+Shader "URP/GrassTintFlatBalanced"
 {
     Properties
     {
         _BaseMap ("Atlas Texture", 2D) = "white" {}
-        _TintColor ("Tint Color", Color) = (0.57, 0.74, 0.35, 1)
-        _TintStrength ("Tint Strength", Range(0,1)) = 1.0
+        _TintColor ("Tint Color", Color) = (0.45, 0.63, 0.28, 1)
+        _TintStrength ("Tint Strength", Range(0,1)) = 0.55
         _AlphaCutoff ("Alpha Cutoff", Range(0,1)) = 0.01
 
-        // Ajustes de detección
-        _GrayTolerance ("Gray tolerance", Range(0,1)) = 0.25
-        _MinBrightness ("Min Brightness", Range(0,1)) = 0.20
+        _SaturationThreshold ("Max Saturation to Tint", Range(0,1)) = 0.25
+        _MinBrightness ("Min Brightness", Range(0,1)) = 0.12
         _MaxBrightness ("Max Brightness", Range(0,1)) = 0.95
     }
 
     SubShader
     {
-        Tags
-        {
-            "RenderPipeline"="UniversalRenderPipeline"
-            "RenderType"="Opaque"
-            "Queue"="Geometry"
-        }
-
-        LOD 200
+        Tags { "RenderPipeline"="UniversalRenderPipeline" "RenderType"="Opaque" "Queue"="Geometry" }
+        LOD 100
 
         Pass
         {
-            Name "ForwardLit"
+            Name "UnlitTint"
             Tags { "LightMode"="UniversalForward" }
 
-            Cull Off
+            Cull Back
             ZWrite On
             Blend One Zero
 
@@ -37,17 +30,19 @@ Shader "URP/GrassTintFixed"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
-                float2 uv : TEXCOORD0;
+                float2 uv         : TEXCOORD0;
             };
 
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
-                float2 uv : TEXCOORD0;
+                float2 uv          : TEXCOORD0;
+                float  fogFactor   : TEXCOORD1;
             };
 
             TEXTURE2D(_BaseMap);
@@ -56,7 +51,7 @@ Shader "URP/GrassTintFixed"
             float4 _TintColor;
             float _TintStrength;
             float _AlphaCutoff;
-            float _GrayTolerance;
+            float _SaturationThreshold;
             float _MinBrightness;
             float _MaxBrightness;
 
@@ -65,7 +60,19 @@ Shader "URP/GrassTintFixed"
                 Varyings OUT;
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
                 OUT.uv = IN.uv;
+                OUT.fogFactor = ComputeFogFactor(OUT.positionHCS.z);
                 return OUT;
+            }
+
+            // === Conversión RGB → HSV ===
+            float3 RGBtoHSV(float3 c)
+            {
+                float4 K = float4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+                float4 p = c.g < c.b ? float4(c.bg, K.wz) : float4(c.gb, K.xy);
+                float4 q = c.r < p.x ? float4(p.xyw, c.r) : float4(c.r, p.yzx);
+                float d = q.x - min(q.w, q.y);
+                float e = 1e-10;
+                return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
             }
 
             half4 frag(Varyings IN) : SV_Target
@@ -73,29 +80,29 @@ Shader "URP/GrassTintFixed"
                 half4 col = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
                 clip(col.a - _AlphaCutoff);
 
-                // --- Cálculo de diferencia entre canales ---
-                float3 rgb = col.rgb;
-                float diff = abs(rgb.r - rgb.g) + abs(rgb.g - rgb.b) + abs(rgb.b - rgb.r);
+                float3 hsv = RGBtoHSV(col.rgb);
+                float brightness = hsv.z;
+                float saturation = hsv.y;
 
-                // --- Promedio de brillo ---
-                float brightness = (rgb.r + rgb.g + rgb.b) / 3.0;
+                // Solo pintar tonos grises (sin luces ni sombras)
+                bool isGray = (saturation < _SaturationThreshold) &&
+                              (brightness > _MinBrightness) &&
+                              (brightness < _MaxBrightness);
 
-                // --- Detección más permisiva ---
-                bool couldBeGrass = (diff < _GrayTolerance) && 
-                                    (brightness > _MinBrightness) && 
-                                    (brightness < _MaxBrightness);
-
-                if (couldBeGrass)
+                if (isGray)
                 {
-                    // Variación suave según brillo
-                    float variation = saturate((brightness - 0.5) * 1.5);
-                    float3 grassTint = lerp(_TintColor.rgb * 0.85, _TintColor.rgb * 1.15, variation);
-
-                    // Aplicar color
-                    col.rgb = lerp(col.rgb, grassTint, _TintStrength);
+                    // 🔹 Suavizar el tinte con mezcla gamma
+                    float3 tinted = pow(lerp(pow(col.rgb, 2.2), pow(_TintColor.rgb, 2.2), _TintStrength), 1.0 / 2.2);
+                    col.rgb = lerp(col.rgb, tinted, 0.8); // mezcla suave
                 }
 
-                return half4(col.rgb, 1.0);
+                // 🔸 Quitar todo brillo (flat color)
+                col.rgb = saturate(col.rgb * 0.95);
+
+                // 🔸 Aplicar niebla (opcional, se mantiene)
+                col.rgb = MixFog(col.rgb, IN.fogFactor);
+
+                return col;
             }
             ENDHLSL
         }

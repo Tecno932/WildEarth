@@ -28,7 +28,7 @@
                     "name": "Jump",
                     "type": "Button",
                     "id": "5d508b2a-fb8a-46a1-8512-16a60f53a59c",
-                    "expectedControlType": "Button",
+                    "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
@@ -37,6 +37,24 @@
                     "name": "Run",
                     "type": "Button",
                     "id": "db97ab82-04d9-4384-9d88-1a905f8a0f2c",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Attack",
+                    "type": "Button",
+                    "id": "8ad09ae4-df3a-44ce-8cc5-9b49c8e2a055",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Use",
+                    "type": "Button",
+                    "id": "ef23125b-2c51-4698-aaa5-8f0d3f8f7311",
                     "expectedControlType": "Button",
                     "processors": "",
                     "interactions": "",
@@ -129,6 +147,28 @@
                     "processors": "",
                     "groups": "",
                     "action": "Run",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "2ba3f7e1-5133-4a2c-9e2b-fc401edc4123",
+                    "path": "<Mouse>/leftButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Attack",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "48c21475-0204-49e2-bcc3-904e08b6b6ce",
+                    "path": "<Mouse>/rightButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Use",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

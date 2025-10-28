@@ -7,7 +7,7 @@ public class ChunkManager : MonoBehaviour
     [Header("Chunk Settings")]
     public int chunkSize = 16;
     public int worldRadius = 3;
-    public int worldHeight = 4; // número de capas de chunks en vertical
+    public int worldHeight = 4;
 
     [Header("References")]
     public Transform player;
@@ -20,7 +20,7 @@ public class ChunkManager : MonoBehaviour
 
     private void Start()
     {
-        storage = FindObjectOfType<ChunkStorage>();
+        storage = Object.FindFirstObjectByType<ChunkStorage>();
         if (storage == null)
         {
             GameObject obj = new("ChunkStorage");
@@ -68,17 +68,10 @@ public class ChunkManager : MonoBehaviour
 
         List<Vector3Int> needed = new();
         for (int x = -worldRadius; x <= worldRadius; x++)
-        {
-            for (int z = -worldRadius; z <= worldRadius; z++)
-            {
-                for (int y = 0; y < worldHeight; y++) // genera niveles verticales
-                {
-                    needed.Add(new Vector3Int(center.x + x, y, center.z + z));
-                }
-            }
-        }
+        for (int z = -worldRadius; z <= worldRadius; z++)
+        for (int y = 0; y < worldHeight; y++)
+            needed.Add(new Vector3Int(center.x + x, y, center.z + z));
 
-        // eliminar chunks fuera del rango
         List<Vector3Int> toRemove = new();
         foreach (var kv in activeChunks)
             if (!needed.Contains(kv.Key))
@@ -90,7 +83,6 @@ public class ChunkManager : MonoBehaviour
             activeChunks.Remove(coord);
         }
 
-        // generar nuevos chunks
         foreach (var coord in needed)
         {
             if (activeChunks.ContainsKey(coord)) continue;
@@ -103,8 +95,10 @@ public class ChunkManager : MonoBehaviour
             else
             {
                 ChunkWorker.EnqueueJob(coord, chunkSize, 0.08f, 16f);
-                yield return new WaitUntil(() => ChunkWorker.TryGetCompletedJob(out data, out var c) &&
+                yield return new WaitUntil(() =>
+                    ChunkWorker.TryGetCompletedJob(out data, out var c) &&
                     c.x == coord.x && c.y == coord.z);
+
                 if (data != null)
                     storage.SaveChunk(new Vector2Int(coord.x, coord.z), data);
             }
@@ -126,7 +120,7 @@ public class ChunkManager : MonoBehaviour
         Chunk chunk = chunkObj.GetComponent<Chunk>();
         chunk.material = chunkMaterial ?? AtlasBuilder.Instance.GetSharedMaterial();
         chunk.size = chunkSize;
-        chunk.SetData(data, coord, FindObjectOfType<WorldGenerator>());
+        chunk.SetData(data, coord, Object.FindFirstObjectByType<WorldGenerator>());
         activeChunks[coord] = chunkObj;
 
         Debug.Log($"🟩 Chunk generado en {coord}");

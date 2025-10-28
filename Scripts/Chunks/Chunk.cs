@@ -18,6 +18,7 @@ public class Chunk : MonoBehaviour
     private Material tintedMat;
 
     private byte[,,] blocks;
+    public byte[,,] GetBlocks() => blocks;
     private Dictionary<Vector3Int, byte[,,]> neighborCache = new();
 
     void Awake()
@@ -45,9 +46,9 @@ public class Chunk : MonoBehaviour
         worldRef = world;
         size = data.GetLength(0);
 
-        // 🔹 Obtener materiales desde el AtlasBuilder
-        defaultMat = AtlasBuilder.Instance.GetMaterialForBlock("stone");
-        tintedMat = AtlasBuilder.Instance.GetMaterialForBlock("grass");
+    // 🔹 Cargar materiales base
+    defaultMat = AtlasBuilder.Instance.GetMaterialForBlock("default");
+    tintedMat  = AtlasBuilder.Instance.GetMaterialForBlock("grasstint");
 
         CacheNeighbors();
         BuildMesh();
@@ -86,11 +87,13 @@ public class Chunk : MonoBehaviour
             if (block == 0) continue;
 
             BlockInfo info = BlockDatabase.Instance.GetBlock(GetBlockName(block));
-            bool isTinted = info.name.Contains("grass") || info.name.Contains("vine") || info.name.Contains("leaves");
+            // Usa el material declarado en el JSON (ej: "GrassTint" o "Default")
+            string matType = info.material?.ToLower() ?? "default";
+            bool isTinted = matType.Contains("grasstint");
 
             var verts = isTinted ? vertsTinted : vertsDefault;
-            var tris = isTinted ? trisTinted : trisDefault;
-            var uvs = isTinted ? uvsTinted : uvsDefault;
+            var tris  = isTinted ? trisTinted  : trisDefault;
+            var uvs   = isTinted ? uvsTinted   : uvsDefault;
 
             for (int face = 0; face < 6; face++)
             {
@@ -124,10 +127,23 @@ public class Chunk : MonoBehaviour
         mesh.RecalculateBounds();
 
         mf.sharedMesh = mesh;
+
+        // 🔹 Forzar regenerar el collider correctamente
+        mc.sharedMesh = null;
         mc.sharedMesh = mesh;
 
+        if (mc.sharedMesh == null)
+    Debug.LogWarning($"⚠️ Chunk {chunkCoord} no tiene collider asignado.");
+else
+    Debug.Log($"✅ Chunk {chunkCoord} collider activo con {mc.sharedMesh.vertexCount} vértices.");
+
+
         // 🟩 Usa ambos materiales en el mismo MeshRenderer
-        mr.sharedMaterials = new[] { defaultMat, tintedMat };
+        List<Material> usedMats = new();
+        if (vertsDefault.Count > 0) usedMats.Add(defaultMat);
+        if (vertsTinted.Count > 0) usedMats.Add(tintedMat);
+
+        mr.sharedMaterials = usedMats.ToArray();
     }
 
     private static List<int> ShiftIndices(List<int> list, int offset)
@@ -257,9 +273,11 @@ public class Chunk : MonoBehaviour
 
     private byte GetBlockGlobal(int x, int y, int z)
     {
+        // Dentro del mismo chunk
         if (x >= 0 && x < size && y >= 0 && y < size && z >= 0 && z < size)
             return blocks[x, y, z];
 
+        // --- Coordenadas fuera del límite ---
         Vector3Int offset = Vector3Int.zero;
         int nx = x, ny = y, nz = z;
 
@@ -269,15 +287,25 @@ public class Chunk : MonoBehaviour
         if (z < 0) { offset.z = -1; nz = size - 1; }
         else if (z >= size) { offset.z = 1; nz = 0; }
 
+        // 👇 Corregido: mantiene el valor de Y sin reubicarlo
+        if (ny < 0 || ny >= size) return 0;
+
         if (!neighborCache.TryGetValue(offset, out var neighbor) || neighbor == null)
             return 0;
 
-        if (ny < 0 || ny >= neighbor.GetLength(1) ||
-            nx < 0 || nx >= neighbor.GetLength(0) ||
+        // 👇 Corregido: validación usando límites del vecino, no del original
+        if (nx < 0 || nx >= neighbor.GetLength(0) ||
+            ny < 0 || ny >= neighbor.GetLength(1) ||
             nz < 0 || nz >= neighbor.GetLength(2))
             return 0;
 
         return neighbor[nx, ny, nz];
+    }
+
+    public void SetBlock(Vector3Int localPos, byte id)
+    {
+        blocks[localPos.x, localPos.y, localPos.z] = id;
+        BuildMesh();
     }
 
     private string GetBlockName(byte id) => id switch
@@ -287,4 +315,12 @@ public class Chunk : MonoBehaviour
         3 => "stone",
         _ => "dirt"
     };
+
+    // ============================================================
+    // 🔹 Reconstruye el mesh y el collider del chunk
+    // ============================================================
+    public void Rebuild()
+    {
+        BuildMesh();
+    }
 }

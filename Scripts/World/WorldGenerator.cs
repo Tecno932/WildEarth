@@ -2,13 +2,6 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
-/// <summary>
-/// Generador principal de mundo voxel:
-/// - Inicializa la semilla global.
-/// - Controla los chunks visibles según la posición del jugador.
-/// - Crea los chunks con materiales por tipo (default + tinted).
-/// - Soporta precompute opcional.
-/// </summary>
 public class WorldGenerator : MonoBehaviour
 {
     [Header("World Settings")]
@@ -30,17 +23,16 @@ public class WorldGenerator : MonoBehaviour
 
     [Header("References")]
     public Transform player;
-    public Material defaultMaterial; // tierra, piedra, etc.
-    public Material tintedMaterial;  // pasto, hojas, enredaderas, etc.
+    public Material defaultMaterial;
+    public Material tintedMaterial;
 
     private Dictionary<Vector2Int, GameObject> activeChunks = new();
     private ChunkStorage storage;
-    private Vector2Int lastPlayerChunk = new Vector2Int(int.MinValue, int.MinValue);
+    private Vector2Int lastPlayerChunk = new(int.MinValue, int.MinValue);
     private bool generating = false;
 
     void Start()
     {
-        // 🔹 Inicializar seed global
         if (customSeed != 0)
         {
             WorldSettings.InitializeSeed(customSeed);
@@ -52,7 +44,6 @@ public class WorldGenerator : MonoBehaviour
             Debug.Log($"🌍 Semilla aleatoria generada: {WorldSettings.Seed}");
         }
 
-        // 🔹 Crear o encontrar almacenamiento
         storage = Object.FindFirstObjectByType<ChunkStorage>();
         if (storage == null)
         {
@@ -61,11 +52,9 @@ public class WorldGenerator : MonoBehaviour
             Debug.Log("[WorldGenerator] ChunkStorage creado en runtime.");
         }
 
-        // 🔹 Iniciar el worker
         ChunkWorker.StartWorker();
         Debug.Log("[WorldGenerator] ChunkWorker iniciado.");
 
-        // 🔹 Esperar atlas antes de generar
         StartCoroutine(WaitForAtlasThenGenerate());
     }
 
@@ -123,7 +112,6 @@ public class WorldGenerator : MonoBehaviour
 
         needed.Sort((a, b) => Vector2.Distance(a, center).CompareTo(Vector2.Distance(b, center)));
 
-        // 🔹 Remover los que ya no están en vista
         List<Vector2Int> toRemove = new();
         foreach (var kv in activeChunks)
             if (!needed.Contains(kv.Key))
@@ -135,7 +123,6 @@ public class WorldGenerator : MonoBehaviour
             activeChunks.Remove(coord);
         }
 
-        // 🔹 Crear los nuevos necesarios
         foreach (var coord in needed)
         {
             if (activeChunks.ContainsKey(coord)) continue;
@@ -186,14 +173,88 @@ public class WorldGenerator : MonoBehaviour
         activeChunks[coord] = chunkObj;
     }
 
+    public Vector3Int GetBlockCoords(Vector3 worldPos)
+    {
+        return new Vector3Int(
+            Mathf.FloorToInt(worldPos.x),
+            Mathf.FloorToInt(worldPos.y),
+            Mathf.FloorToInt(worldPos.z)
+        );
+    }
+
+    // ============================================================
+    // 🔹 Colocar o romper bloques
+    // ============================================================
+    public void SetBlock(Vector3Int pos, byte id)
+    {
+        // 1️⃣ Calcular coordenadas del chunk solo en XZ
+        Vector3Int chunkCoord = new(
+            Mathf.FloorToInt((float)pos.x / chunkSize),
+            0,
+            Mathf.FloorToInt((float)pos.z / chunkSize)
+        );
+
+        Chunk chunk = GetChunk(chunkCoord);
+        if (chunk == null) return;
+
+        // 2️⃣ Convertir a coordenadas locales dentro del chunk
+        int lx = Mathf.FloorToInt(Mathf.Repeat(pos.x, chunkSize));
+        int ly = Mathf.Clamp(pos.y, 0, chunkSize - 1);
+        int lz = Mathf.FloorToInt(Mathf.Repeat(pos.z, chunkSize));
+
+        // 3️⃣ Modificar bloque y regenerar malla
+        chunk.SetBlock(new Vector3Int(lx, ly, lz), id);
+
+        // 4️⃣ Actualizar vecinos si está en el borde
+        UpdateNeighborChunksIfNeeded(chunkCoord, lx, lz);
+    }
+
     private IEnumerator PrecomputeWorldData(int radius)
     {
-        yield break; // (puedo pasarte la versión extendida si querés caching completo)
+        yield break;
     }
 
     public byte[,,] GetChunkBlocks(Vector3Int chunkCoord)
     {
         Vector2Int key = new(chunkCoord.x, chunkCoord.z);
         return storage?.GetChunkData(key);
+    }
+
+    public Chunk GetChunk(Vector3Int chunkCoord)
+    {
+        Vector2Int key = new(chunkCoord.x, chunkCoord.z);
+        return activeChunks.TryGetValue(key, out GameObject obj) ? obj.GetComponent<Chunk>() : null;
+    }
+
+    // ============================================================
+    // 🔹 Actualiza vecinos si se modifica un bloque en los bordes
+    // ============================================================
+    private void UpdateNeighborChunksIfNeeded(Vector3Int chunkCoord, int lx, int lz)
+    {
+        bool atLeft = lx == 0;
+        bool atRight = lx == chunkSize - 1;
+        bool atFront = lz == chunkSize - 1;
+        bool atBack = lz == 0;
+
+        if (atLeft)
+        {
+            Vector3Int neighbor = chunkCoord + new Vector3Int(-1, 0, 0);
+            GetChunk(neighbor)?.Rebuild();
+        }
+        if (atRight)
+        {
+            Vector3Int neighbor = chunkCoord + new Vector3Int(1, 0, 0);
+            GetChunk(neighbor)?.Rebuild();
+        }
+        if (atFront)
+        {
+            Vector3Int neighbor = chunkCoord + new Vector3Int(0, 0, 1);
+            GetChunk(neighbor)?.Rebuild();
+        }
+        if (atBack)
+        {
+            Vector3Int neighbor = chunkCoord + new Vector3Int(0, 0, -1);
+            GetChunk(neighbor)?.Rebuild();
+        }
     }
 }

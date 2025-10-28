@@ -1,0 +1,2283 @@
+aun asi no me deja romper ni poner bloques, te voy a pasa la mayor parte del codigo para que arregles y ahora se pueda poner y romper bloques
+
+playercontroller.cs
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+[RequireComponent(typeof(CharacterController))]
+public class PlayerController : MonoBehaviour
+{
+    [Header("Movement")]
+    public float walkSpeed = 6f;
+    public float runSpeed = 10f;
+    public float jumpForce = 7f;
+    public float gravity = 20f;
+
+    [Header("Flight")]
+    public float flightSpeed = 15f;
+    public float doubleTapDelay = 0.3f;
+
+    [Header("Mouse Look")]
+    public float mouseSensitivity = 2.0f;
+    public Transform cameraTransform;
+    public float cameraHeight = 0.9f;
+
+    private CharacterController cc;
+    private PlayerInputActions input;
+    private Vector2 moveInput;
+    private Vector2 lookInput;
+    private bool jumpPressed;
+    private bool runPressed;
+
+    private float verticalVelocity;
+    private float pitch;
+
+    private bool isFlying = false;
+    private bool waitingForSecondJump = false;
+    private float lastJumpTime = 0f;
+
+    void Awake()
+    {
+        cc = GetComponent<CharacterController>();
+        input = new PlayerInputActions();
+
+        // Importante: usar el mapa correcto (Player)
+        input.Player.Move.performed += ctx => moveInput = ctx.ReadValue<Vector2>();
+        input.Player.Move.canceled += _ => moveInput = Vector2.zero;
+
+        input.Player.Look.performed += ctx => lookInput = ctx.ReadValue<Vector2>();
+        input.Player.Look.canceled += _ => lookInput = Vector2.zero;
+
+        input.Player.Jump.started += _ => jumpPressed = true;
+        input.Player.Jump.canceled += _ => jumpPressed = false;
+
+        input.Player.Run.started += _ => runPressed = true;
+        input.Player.Run.canceled += _ => runPressed = false;
+    }
+
+    void OnEnable()
+    {
+        input.Enable();
+    }
+
+    void OnDisable()
+    {
+        input.Disable();
+    }
+
+    void Start()
+    {
+        if (cameraTransform == null)
+        {
+            var cam = GetComponentInChildren<Camera>();
+            if (cam != null) cameraTransform = cam.transform;
+        }
+
+        if (cameraTransform != null)
+            cameraTransform.localPosition = new Vector3(0f, cameraHeight, 0f);
+
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+    }
+
+    void Update()
+    {
+        HandleLook();
+        HandleMovement();
+    }
+
+    private void HandleLook()
+    {
+        // multiplicar por deltaTime para suavizar movimiento con Input System
+        float mx = lookInput.x * mouseSensitivity;
+        float my = lookInput.y * mouseSensitivity;
+
+        transform.Rotate(Vector3.up * mx);
+        pitch -= my;
+        pitch = Mathf.Clamp(pitch, -85f, 85f);
+
+        if (cameraTransform != null)
+            cameraTransform.localEulerAngles = new Vector3(pitch, 0f, 0f);
+    }
+
+    private void HandleMovement()
+    {
+        Vector3 move = (transform.right * moveInput.x + transform.forward * moveInput.y).normalized;
+        float currentSpeed = runPressed ? runSpeed : walkSpeed;
+
+        // 🟢 Doble salto (activar vuelo)
+        if (jumpPressed)
+        {
+            if (cc.isGrounded)
+            {
+                // Salto normal
+                verticalVelocity = jumpForce;
+            }
+            else if (!isFlying && waitingForSecondJump && Time.time - lastJumpTime <= doubleTapDelay)
+            {
+                // Activa modo vuelo
+                isFlying = true;
+                waitingForSecondJump = false;
+                verticalVelocity = 0f;
+            }
+            else if (!waitingForSecondJump)
+            {
+                // Primera pulsación en el aire, espera segunda
+                waitingForSecondJump = true;
+                lastJumpTime = Time.time;
+            }
+
+            jumpPressed = false;
+        }
+
+        if (waitingForSecondJump && Time.time - lastJumpTime > doubleTapDelay)
+            waitingForSecondJump = false;
+
+        // ✈️ Modo vuelo
+        if (isFlying)
+        {
+            Vector3 flyDir = Vector3.zero;
+            if (Keyboard.current.spaceKey.isPressed) flyDir += Vector3.up;
+            if (Keyboard.current.leftCtrlKey.isPressed) flyDir += Vector3.down;
+
+            Vector3 moveDir = (transform.forward * moveInput.y + transform.right * moveInput.x + flyDir).normalized;
+            cc.Move(moveDir * flightSpeed * Time.deltaTime);
+            return;
+        }
+
+        // 🚶 Modo normal
+        if (cc.isGrounded && verticalVelocity < 0f)
+            verticalVelocity = -1f;
+        else
+            verticalVelocity -= gravity * Time.deltaTime;
+
+        Vector3 velocity = move * currentSpeed + Vector3.up * verticalVelocity;
+        cc.Move(velocity * Time.deltaTime);
+    }
+}
+
+---
+
+playerimpuctactin.cs
+//------------------------------------------------------------------------------
+// <auto-generated>
+//     This code was auto-generated by com.unity.inputsystem:InputActionCodeGenerator
+//     version 1.14.2
+//     from Assets/Scripts/Player/PlayerInputActions.inputactions
+//
+//     Changes to this file may cause incorrect behavior and will be lost if
+//     the code is regenerated.
+// </auto-generated>
+//------------------------------------------------------------------------------
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Utilities;
+
+/// <summary>
+/// Provides programmatic access to <see cref="InputActionAsset" />, <see cref="InputActionMap" />, <see cref="InputAction" /> and <see cref="InputControlScheme" /> instances defined in asset "Assets/Scripts/Player/PlayerInputActions.inputactions".
+/// </summary>
+/// <remarks>
+/// This class is source generated and any manual edits will be discarded if the associated asset is reimported or modified.
+/// </remarks>
+/// <example>
+/// <code>
+/// using namespace UnityEngine;
+/// using UnityEngine.InputSystem;
+///
+/// // Example of using an InputActionMap named "Player" from a UnityEngine.MonoBehaviour implementing callback interface.
+/// public class Example : MonoBehaviour, MyActions.IPlayerActions
+/// {
+///     private MyActions_Actions m_Actions;                  // Source code representation of asset.
+///     private MyActions_Actions.PlayerActions m_Player;     // Source code representation of action map.
+///
+///     void Awake()
+///     {
+///         m_Actions = new MyActions_Actions();              // Create asset object.
+///         m_Player = m_Actions.Player;                      // Extract action map object.
+///         m_Player.AddCallbacks(this);                      // Register callback interface IPlayerActions.
+///     }
+///
+///     void OnDestroy()
+///     {
+///         m_Actions.Dispose();                              // Destroy asset object.
+///     }
+///
+///     void OnEnable()
+///     {
+///         m_Player.Enable();                                // Enable all actions within map.
+///     }
+///
+///     void OnDisable()
+///     {
+///         m_Player.Disable();                               // Disable all actions within map.
+///     }
+///
+///     #region Interface implementation of MyActions.IPlayerActions
+///
+///     // Invoked when "Move" action is either started, performed or canceled.
+///     public void OnMove(InputAction.CallbackContext context)
+///     {
+///         Debug.Log($"OnMove: {context.ReadValue&lt;Vector2&gt;()}");
+///     }
+///
+///     // Invoked when "Attack" action is either started, performed or canceled.
+///     public void OnAttack(InputAction.CallbackContext context)
+///     {
+///         Debug.Log($"OnAttack: {context.ReadValue&lt;float&gt;()}");
+///     }
+///
+///     #endregion
+/// }
+/// </code>
+/// </example>
+public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
+{
+    /// <summary>
+    /// Provides access to the underlying asset instance.
+    /// </summary>
+    public InputActionAsset asset { get; }
+
+    /// <summary>
+    /// Constructs a new instance.
+    /// </summary>
+    public @PlayerInputActions()
+    {
+        asset = InputActionAsset.FromJson(@"{
+    ""version"": 1,
+    ""name"": ""PlayerInputActions"",
+    ""maps"": [
+        {
+            ""name"": ""Player"",
+            ""id"": ""7d56b5ae-57c8-4c6a-bf55-6ce6c219f26b"",
+            ""actions"": [
+                {
+                    ""name"": ""Move"",
+                    ""type"": ""Value"",
+                    ""id"": ""7d6dbaed-6e54-46da-a1f3-3a89d64c1a1b"",
+                    ""expectedControlType"": ""Vector2"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                },
+                {
+                    ""name"": ""Look"",
+                    ""type"": ""Value"",
+                    ""id"": ""5a45a6e1-7048-45a4-b34d-d82b93c4e88f"",
+                    ""expectedControlType"": ""Vector2"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                },
+                {
+                    ""name"": ""Jump"",
+                    ""type"": ""Button"",
+                    ""id"": ""5d508b2a-fb8a-46a1-8512-16a60f53a59c"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Run"",
+                    ""type"": ""Button"",
+                    ""id"": ""db97ab82-04d9-4384-9d88-1a905f8a0f2c"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Attack"",
+                    ""type"": ""Button"",
+                    ""id"": ""8ad09ae4-df3a-44ce-8cc5-9b49c8e2a055"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Use"",
+                    ""type"": ""Button"",
+                    ""id"": ""ef23125b-2c51-4698-aaa5-8f0d3f8f7311"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": ""WASD"",
+                    ""id"": ""5dc72a09-3c02-4dc4-924b-bad3d57c5b33"",
+                    ""path"": ""2DVector"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Move"",
+                    ""isComposite"": true,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""up"",
+                    ""id"": ""2dc6236b-f084-46a0-bf2e-27ee5bb89028"",
+                    ""path"": ""<Keyboard>/w"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Move"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""down"",
+                    ""id"": ""1b7a9d1a-70fa-4c43-802b-87c741f4dfe1"",
+                    ""path"": ""<Keyboard>/s"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Move"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""left"",
+                    ""id"": ""1a2eb7d4-57e7-48de-8f38-d961aaf595b2"",
+                    ""path"": ""<Keyboard>/a"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Move"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""right"",
+                    ""id"": ""2c918e83-8a9b-4d7b-94d8-89ebacb145b0"",
+                    ""path"": ""<Keyboard>/d"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Move"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""f2c79b91-df67-4b67-a4ec-4074d3d12e49"",
+                    ""path"": ""<Mouse>/delta"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Look"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""d15b1c58-278c-44f5-b65e-d81a5c34453e"",
+                    ""path"": ""<Keyboard>/space"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Jump"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""1a71da68-9dbd-4b85-96b3-19787ff4c406"",
+                    ""path"": ""<Keyboard>/leftShift"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Run"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""2ba3f7e1-5133-4a2c-9e2b-fc401edc4123"",
+                    ""path"": ""<Mouse>/leftButton"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Attack"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""48c21475-0204-49e2-bcc3-904e08b6b6ce"",
+                    ""path"": ""<Mouse>/rightButton"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Use"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                }
+            ]
+        }
+    ],
+    ""controlSchemes"": []
+}");
+        // Player
+        m_Player = asset.FindActionMap("Player", throwIfNotFound: true);
+        m_Player_Move = m_Player.FindAction("Move", throwIfNotFound: true);
+        m_Player_Look = m_Player.FindAction("Look", throwIfNotFound: true);
+        m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
+        m_Player_Run = m_Player.FindAction("Run", throwIfNotFound: true);
+        m_Player_Attack = m_Player.FindAction("Attack", throwIfNotFound: true);
+        m_Player_Use = m_Player.FindAction("Use", throwIfNotFound: true);
+    }
+
+    ~@PlayerInputActions()
+    {
+        UnityEngine.Debug.Assert(!m_Player.enabled, "This will cause a leak and performance issues, PlayerInputActions.Player.Disable() has not been called.");
+    }
+
+    /// <summary>
+    /// Destroys this asset and all associated <see cref="InputAction"/> instances.
+    /// </summary>
+    public void Dispose()
+    {
+        UnityEngine.Object.Destroy(asset);
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.bindingMask" />
+    public InputBinding? bindingMask
+    {
+        get => asset.bindingMask;
+        set => asset.bindingMask = value;
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.devices" />
+    public ReadOnlyArray<InputDevice>? devices
+    {
+        get => asset.devices;
+        set => asset.devices = value;
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.controlSchemes" />
+    public ReadOnlyArray<InputControlScheme> controlSchemes => asset.controlSchemes;
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.Contains(InputAction)" />
+    public bool Contains(InputAction action)
+    {
+        return asset.Contains(action);
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.GetEnumerator()" />
+    public IEnumerator<InputAction> GetEnumerator()
+    {
+        return asset.GetEnumerator();
+    }
+
+    /// <inheritdoc cref="IEnumerable.GetEnumerator()" />
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.Enable()" />
+    public void Enable()
+    {
+        asset.Enable();
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.Disable()" />
+    public void Disable()
+    {
+        asset.Disable();
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.bindings" />
+    public IEnumerable<InputBinding> bindings => asset.bindings;
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.FindAction(string, bool)" />
+    public InputAction FindAction(string actionNameOrId, bool throwIfNotFound = false)
+    {
+        return asset.FindAction(actionNameOrId, throwIfNotFound);
+    }
+
+    /// <inheritdoc cref="UnityEngine.InputSystem.InputActionAsset.FindBinding(InputBinding, out InputAction)" />
+    public int FindBinding(InputBinding bindingMask, out InputAction action)
+    {
+        return asset.FindBinding(bindingMask, out action);
+    }
+
+    // Player
+    private readonly InputActionMap m_Player;
+    private List<IPlayerActions> m_PlayerActionsCallbackInterfaces = new List<IPlayerActions>();
+    private readonly InputAction m_Player_Move;
+    private readonly InputAction m_Player_Look;
+    private readonly InputAction m_Player_Jump;
+    private readonly InputAction m_Player_Run;
+    private readonly InputAction m_Player_Attack;
+    private readonly InputAction m_Player_Use;
+    /// <summary>
+    /// Provides access to input actions defined in input action map "Player".
+    /// </summary>
+    public struct PlayerActions
+    {
+        private @PlayerInputActions m_Wrapper;
+
+        /// <summary>
+        /// Construct a new instance of the input action map wrapper class.
+        /// </summary>
+        public PlayerActions(@PlayerInputActions wrapper) { m_Wrapper = wrapper; }
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Move".
+        /// </summary>
+        public InputAction @Move => m_Wrapper.m_Player_Move;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Look".
+        /// </summary>
+        public InputAction @Look => m_Wrapper.m_Player_Look;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Jump".
+        /// </summary>
+        public InputAction @Jump => m_Wrapper.m_Player_Jump;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Run".
+        /// </summary>
+        public InputAction @Run => m_Wrapper.m_Player_Run;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Attack".
+        /// </summary>
+        public InputAction @Attack => m_Wrapper.m_Player_Attack;
+        /// <summary>
+        /// Provides access to the underlying input action "Player/Use".
+        /// </summary>
+        public InputAction @Use => m_Wrapper.m_Player_Use;
+        /// <summary>
+        /// Provides access to the underlying input action map instance.
+        /// </summary>
+        public InputActionMap Get() { return m_Wrapper.m_Player; }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Enable()" />
+        public void Enable() { Get().Enable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Disable()" />
+        public void Disable() { Get().Disable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.enabled" />
+        public bool enabled => Get().enabled;
+        /// <summary>
+        /// Implicitly converts an <see ref="PlayerActions" /> to an <see ref="InputActionMap" /> instance.
+        /// </summary>
+        public static implicit operator InputActionMap(PlayerActions set) { return set.Get(); }
+        /// <summary>
+        /// Adds <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <param name="instance">Callback instance.</param>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c> or <paramref name="instance"/> have already been added this method does nothing.
+        /// </remarks>
+        /// <seealso cref="PlayerActions" />
+        public void AddCallbacks(IPlayerActions instance)
+        {
+            if (instance == null || m_Wrapper.m_PlayerActionsCallbackInterfaces.Contains(instance)) return;
+            m_Wrapper.m_PlayerActionsCallbackInterfaces.Add(instance);
+            @Move.started += instance.OnMove;
+            @Move.performed += instance.OnMove;
+            @Move.canceled += instance.OnMove;
+            @Look.started += instance.OnLook;
+            @Look.performed += instance.OnLook;
+            @Look.canceled += instance.OnLook;
+            @Jump.started += instance.OnJump;
+            @Jump.performed += instance.OnJump;
+            @Jump.canceled += instance.OnJump;
+            @Run.started += instance.OnRun;
+            @Run.performed += instance.OnRun;
+            @Run.canceled += instance.OnRun;
+            @Attack.started += instance.OnAttack;
+            @Attack.performed += instance.OnAttack;
+            @Attack.canceled += instance.OnAttack;
+            @Use.started += instance.OnUse;
+            @Use.performed += instance.OnUse;
+            @Use.canceled += instance.OnUse;
+        }
+
+        /// <summary>
+        /// Removes <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <remarks>
+        /// Calling this method when <paramref name="instance" /> have not previously been registered has no side-effects.
+        /// </remarks>
+        /// <seealso cref="PlayerActions" />
+        private void UnregisterCallbacks(IPlayerActions instance)
+        {
+            @Move.started -= instance.OnMove;
+            @Move.performed -= instance.OnMove;
+            @Move.canceled -= instance.OnMove;
+            @Look.started -= instance.OnLook;
+            @Look.performed -= instance.OnLook;
+            @Look.canceled -= instance.OnLook;
+            @Jump.started -= instance.OnJump;
+            @Jump.performed -= instance.OnJump;
+            @Jump.canceled -= instance.OnJump;
+            @Run.started -= instance.OnRun;
+            @Run.performed -= instance.OnRun;
+            @Run.canceled -= instance.OnRun;
+            @Attack.started -= instance.OnAttack;
+            @Attack.performed -= instance.OnAttack;
+            @Attack.canceled -= instance.OnAttack;
+            @Use.started -= instance.OnUse;
+            @Use.performed -= instance.OnUse;
+            @Use.canceled -= instance.OnUse;
+        }
+
+        /// <summary>
+        /// Unregisters <param cref="instance" /> and unregisters all input action callbacks via <see cref="PlayerActions.UnregisterCallbacks(IPlayerActions)" />.
+        /// </summary>
+        /// <seealso cref="PlayerActions.UnregisterCallbacks(IPlayerActions)" />
+        public void RemoveCallbacks(IPlayerActions instance)
+        {
+            if (m_Wrapper.m_PlayerActionsCallbackInterfaces.Remove(instance))
+                UnregisterCallbacks(instance);
+        }
+
+        /// <summary>
+        /// Replaces all existing callback instances and previously registered input action callbacks associated with them with callbacks provided via <param cref="instance" />.
+        /// </summary>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c>, calling this method will only unregister all existing callbacks but not register any new callbacks.
+        /// </remarks>
+        /// <seealso cref="PlayerActions.AddCallbacks(IPlayerActions)" />
+        /// <seealso cref="PlayerActions.RemoveCallbacks(IPlayerActions)" />
+        /// <seealso cref="PlayerActions.UnregisterCallbacks(IPlayerActions)" />
+        public void SetCallbacks(IPlayerActions instance)
+        {
+            foreach (var item in m_Wrapper.m_PlayerActionsCallbackInterfaces)
+                UnregisterCallbacks(item);
+            m_Wrapper.m_PlayerActionsCallbackInterfaces.Clear();
+            AddCallbacks(instance);
+        }
+    }
+    /// <summary>
+    /// Provides a new <see cref="PlayerActions" /> instance referencing this action map.
+    /// </summary>
+    public PlayerActions @Player => new PlayerActions(this);
+    /// <summary>
+    /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "Player" which allows adding and removing callbacks.
+    /// </summary>
+    /// <seealso cref="PlayerActions.AddCallbacks(IPlayerActions)" />
+    /// <seealso cref="PlayerActions.RemoveCallbacks(IPlayerActions)" />
+    public interface IPlayerActions
+    {
+        /// <summary>
+        /// Method invoked when associated input action "Move" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnMove(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Look" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnLook(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Jump" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnJump(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Run" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnRun(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Attack" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnAttack(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Use" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnUse(InputAction.CallbackContext context);
+    }
+}
+
+---
+
+playerimputactions.imputactions
+{
+    "version": 1,
+    "name": "PlayerInputActions",
+    "maps": [
+        {
+            "name": "Player",
+            "id": "7d56b5ae-57c8-4c6a-bf55-6ce6c219f26b",
+            "actions": [
+                {
+                    "name": "Move",
+                    "type": "Value",
+                    "id": "7d6dbaed-6e54-46da-a1f3-3a89d64c1a1b",
+                    "expectedControlType": "Vector2",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                },
+                {
+                    "name": "Look",
+                    "type": "Value",
+                    "id": "5a45a6e1-7048-45a4-b34d-d82b93c4e88f",
+                    "expectedControlType": "Vector2",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                },
+                {
+                    "name": "Jump",
+                    "type": "Button",
+                    "id": "5d508b2a-fb8a-46a1-8512-16a60f53a59c",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Run",
+                    "type": "Button",
+                    "id": "db97ab82-04d9-4384-9d88-1a905f8a0f2c",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Attack",
+                    "type": "Button",
+                    "id": "8ad09ae4-df3a-44ce-8cc5-9b49c8e2a055",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Use",
+                    "type": "Button",
+                    "id": "ef23125b-2c51-4698-aaa5-8f0d3f8f7311",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "WASD",
+                    "id": "5dc72a09-3c02-4dc4-924b-bad3d57c5b33",
+                    "path": "2DVector",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": true,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "up",
+                    "id": "2dc6236b-f084-46a0-bf2e-27ee5bb89028",
+                    "path": "<Keyboard>/w",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
+                    "name": "down",
+                    "id": "1b7a9d1a-70fa-4c43-802b-87c741f4dfe1",
+                    "path": "<Keyboard>/s",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
+                    "name": "left",
+                    "id": "1a2eb7d4-57e7-48de-8f38-d961aaf595b2",
+                    "path": "<Keyboard>/a",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
+                    "name": "right",
+                    "id": "2c918e83-8a9b-4d7b-94d8-89ebacb145b0",
+                    "path": "<Keyboard>/d",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
+                    "name": "",
+                    "id": "f2c79b91-df67-4b67-a4ec-4074d3d12e49",
+                    "path": "<Mouse>/delta",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "d15b1c58-278c-44f5-b65e-d81a5c34453e",
+                    "path": "<Keyboard>/space",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Jump",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "1a71da68-9dbd-4b85-96b3-19787ff4c406",
+                    "path": "<Keyboard>/leftShift",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Run",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "2ba3f7e1-5133-4a2c-9e2b-fc401edc4123",
+                    "path": "<Mouse>/leftButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Attack",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "48c21475-0204-49e2-bcc3-904e08b6b6ce",
+                    "path": "<Mouse>/rightButton",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Use",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}
+
+---
+
+HotBarinventory.cs
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class HotbarInventory : MonoBehaviour
+{
+    public byte[] slots = new byte[9];
+    public int selectedSlot = 0;
+
+    private PlayerBlockInteractor interactor;
+
+    void Start()
+    {
+        interactor = GetComponent<PlayerBlockInteractor>();
+
+        // bloques de prueba
+        slots[0] = 1; // dirt
+        slots[1] = 2; // grass
+        slots[2] = 3; // stone
+    }
+
+    void Update()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard == null) return;
+
+        for (int i = 0; i < 9; i++)
+        {
+            // Key.Digit1, Key.Digit2, ..., Key.Digit9
+            Key key = Key.Digit1 + i;
+
+            if (keyboard[key].wasPressedThisFrame)
+            {
+                selectedSlot = i;
+                if (interactor != null)
+                    interactor.selectedBlock = slots[i];
+
+                Debug.Log($"Seleccionado slot {i + 1} → bloque {slots[i]}");
+            }
+        }
+    }
+}
+
+---
+
+playerblockinteractions.cs
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class PlayerBlockInteractor : MonoBehaviour
+{
+    [Header("Settings")]
+    public float reachDistance = 6f;
+    public LayerMask blockMask;
+    public Camera playerCamera;
+    public byte selectedBlock = 1;
+
+    private PlayerInputActions input;
+    private WorldGenerator world;
+
+    void Awake()
+    {
+        input = new PlayerInputActions();
+        input.Enable();
+
+        input.Player.Attack.performed += _ => TryBreakBlock();
+        input.Player.Use.performed += _ => TryPlaceBlock();
+    }
+
+    void Start()
+    {
+        if (playerCamera == null)
+            playerCamera = Camera.main;
+
+        world = FindFirstObjectByType<WorldGenerator>();
+    }
+
+    void TryBreakBlock()
+    {
+        if (playerCamera == null || world == null) return;
+
+        if (Physics.Raycast(playerCamera.transform.position, playerCamera.transform.forward, out RaycastHit hit, reachDistance, blockMask))
+        {
+            Vector3Int blockPos = world.GetBlockCoords(hit.point - hit.normal * 0.5f);
+            world.SetBlock(blockPos, 0); // 0 = aire
+        }
+    }
+
+    void TryPlaceBlock()
+    {
+        if (playerCamera == null || world == null) return;
+
+        if (Physics.Raycast(playerCamera.transform.position, playerCamera.transform.forward, out RaycastHit hit, reachDistance, blockMask))
+        {
+            Vector3Int blockPos = world.GetBlockCoords(hit.point + hit.normal * 0.5f);
+            world.SetBlock(blockPos, selectedBlock);
+        }
+    }
+}
+
+---
+
+chunk.cs
+
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
+public class Chunk : MonoBehaviour
+{
+    public int size = 16;
+    public float blockSize = 1f;
+
+    private MeshFilter mf;
+    private MeshRenderer mr;
+    private MeshCollider mc;
+
+    public WorldGenerator worldRef;
+    public Vector3Int chunkCoord;
+
+    private Material defaultMat;
+    private Material tintedMat;
+
+    private byte[,,] blocks;
+    private Dictionary<Vector3Int, byte[,,]> neighborCache = new();
+
+    void Awake()
+    {
+        mf = GetComponent<MeshFilter>();
+        mr = GetComponent<MeshRenderer>();
+        mc = GetComponent<MeshCollider>();
+    }
+
+    public Material material
+    {
+        get => mr != null ? mr.sharedMaterial : null;
+        set { if (mr != null) mr.sharedMaterial = value; }
+    }
+
+    public void SetData(byte[,,] data, Vector3Int coord, WorldGenerator world)
+    {
+        Initialize(data, coord, world);
+    }
+
+    public void Initialize(byte[,,] data, Vector3Int coord, WorldGenerator world)
+    {
+        blocks = data;
+        chunkCoord = coord;
+        worldRef = world;
+        size = data.GetLength(0);
+
+        // 🔹 Obtener materiales desde el AtlasBuilder
+        defaultMat = AtlasBuilder.Instance.GetMaterialForBlock("stone");
+        tintedMat = AtlasBuilder.Instance.GetMaterialForBlock("grass");
+
+        CacheNeighbors();
+        BuildMesh();
+    }
+
+    private void CacheNeighbors()
+    {
+        neighborCache.Clear();
+        Vector3Int[] dirs = {
+            new(-1, 0, 0), new(1, 0, 0),
+            new(0, 0, -1), new(0, 0, 1)
+        };
+
+        foreach (var dir in dirs)
+        {
+            Vector3Int nc = chunkCoord + dir;
+            neighborCache[nc - chunkCoord] = worldRef.GetChunkBlocks(nc) ?? new byte[size, size, size];
+        }
+    }
+
+    private void BuildMesh()
+    {
+        List<Vector3> vertsDefault = new();
+        List<int> trisDefault = new();
+        List<Vector2> uvsDefault = new();
+
+        List<Vector3> vertsTinted = new();
+        List<int> trisTinted = new();
+        List<Vector2> uvsTinted = new();
+
+        for (int x = 0; x < size; x++)
+        for (int y = 0; y < size; y++)
+        for (int z = 0; z < size; z++)
+        {
+            byte block = blocks[x, y, z];
+            if (block == 0) continue;
+
+            BlockInfo info = BlockDatabase.Instance.GetBlock(GetBlockName(block));
+            bool isTinted = info.name.Contains("grass") || info.name.Contains("vine") || info.name.Contains("leaves");
+
+            var verts = isTinted ? vertsTinted : vertsDefault;
+            var tris = isTinted ? trisTinted : trisDefault;
+            var uvs = isTinted ? uvsTinted : uvsDefault;
+
+            for (int face = 0; face < 6; face++)
+            {
+                Vector3Int neighbor = GetNeighborOffset(face);
+                byte neighborBlock = GetBlockGlobal(x + neighbor.x, y + neighbor.y, z + neighbor.z);
+                if (neighborBlock != 0) continue;
+
+                AddFace(block, x, y, z, face, verts, tris, uvs);
+
+                if (info.textures.overlay != null && info.textures.overlay.Length > 0 && face is 0 or 1 or 4 or 5)
+                {
+                    string overlayTex = info.textures.overlay[0];
+                    AddOverlayFace(x, y, z, face, verts, tris, uvs, overlayTex);
+                }
+            }
+        }
+
+        Mesh mesh = new() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+        mesh.subMeshCount = 2;
+
+        var vertsCombined = new List<Vector3>();
+        vertsCombined.AddRange(vertsDefault);
+        vertsCombined.AddRange(vertsTinted);
+
+        mesh.SetVertices(vertsCombined);
+        mesh.SetTriangles(trisDefault, 0);
+        mesh.SetTriangles(ShiftIndices(trisTinted, vertsDefault.Count), 1);
+        mesh.SetUVs(0, CombineUVs(uvsDefault, uvsTinted));
+
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+
+        mf.sharedMesh = mesh;
+        mc.sharedMesh = mesh;
+
+        // 🟩 Usa ambos materiales en el mismo MeshRenderer
+        mr.sharedMaterials = new[] { defaultMat, tintedMat };
+    }
+
+    private static List<int> ShiftIndices(List<int> list, int offset)
+    {
+        List<int> shifted = new(list.Count);
+        foreach (int i in list) shifted.Add(i + offset);
+        return shifted;
+    }
+
+    private static List<Vector2> CombineUVs(List<Vector2> a, List<Vector2> b)
+    {
+        List<Vector2> all = new(a.Count + b.Count);
+        all.AddRange(a);
+        all.AddRange(b);
+        return all;
+    }
+
+    // ============================
+    // 🧩 Generación de caras
+    // ============================
+    private void AddFace(byte blockId, int x, int y, int z, int face,
+                         List<Vector3> verts, List<int> tris, List<Vector2> uvs)
+    {
+        int vertIndex = verts.Count;
+        Vector3 basePos = new(x, y, z);
+        Vector3[] faceVerts = GetFaceVertices(basePos, face);
+        verts.AddRange(faceVerts);
+
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 1);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 3);
+
+        string blockName = GetBlockName(blockId);
+        BlockInfo info = BlockDatabase.Instance.GetBlock(blockName);
+
+        string texId = info.textures.all;
+        if (face == 2 && info.textures.top != null && info.textures.top.Length > 0)
+        {
+            int idx = Mathf.FloorToInt(Mathf.Abs(Mathf.Sin(x * 928.5f + z * 517.2f)) * info.textures.top.Length) % info.textures.top.Length;
+            texId = info.textures.top[idx];
+        }
+        else if (face == 3 && info.textures.bottom != null && info.textures.bottom.Length > 0)
+            texId = info.textures.bottom[0];
+        else if (info.textures.side != null && info.textures.side.Length > 0)
+            texId = info.textures.side[0];
+
+        if (string.IsNullOrEmpty(texId)) texId = "dirt";
+        Rect uvRect = AtlasBuilder.Instance.GetUV(texId);
+        AddFaceUVs(face, uvRect, uvs);
+    }
+
+    private void AddOverlayFace(int x, int y, int z, int face,
+                                List<Vector3> verts, List<int> tris, List<Vector2> uvs,
+                                string overlayTex)
+    {
+        int vertIndex = verts.Count;
+        Vector3 basePos = new(x, y, z);
+        Vector3[] faceVerts = GetFaceVertices(basePos, face);
+
+        Vector3 offset = GetNormal(face) * 0.001f;
+        for (int i = 0; i < 4; i++)
+            faceVerts[i] += offset;
+
+        verts.AddRange(faceVerts);
+
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 1);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 0);
+        tris.Add(vertIndex + 2);
+        tris.Add(vertIndex + 3);
+
+        Rect uvRect = AtlasBuilder.Instance.GetUV(overlayTex);
+        AddFaceUVs(face, uvRect, uvs);
+    }
+
+    private void AddFaceUVs(int face, Rect uvRect, List<Vector2> uvs)
+    {
+        Vector2[] faceUVs = face switch
+        {
+            0 => new[] { new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMin) },
+            1 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin) },
+            2 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax) },
+            3 => new[] { new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMin) },
+            4 => new[] { new Vector2(uvRect.xMax, uvRect.yMin), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMin, uvRect.yMin) },
+            5 => new[] { new Vector2(uvRect.xMin, uvRect.yMin), new Vector2(uvRect.xMin, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMax), new Vector2(uvRect.xMax, uvRect.yMin) },
+            _ => null
+        };
+        uvs.AddRange(faceUVs);
+    }
+
+    private static Vector3 GetNormal(int face) => face switch
+    {
+        0 => Vector3.left,
+        1 => Vector3.right,
+        2 => Vector3.up,
+        3 => Vector3.down,
+        4 => Vector3.back,
+        5 => Vector3.forward,
+        _ => Vector3.zero
+    };
+
+    private static Vector3[] GetFaceVertices(Vector3 pos, int face) => face switch
+    {
+        0 => new[] { pos + new Vector3(0, 0, 1), pos + new Vector3(0, 1, 1), pos + new Vector3(0, 1, 0), pos + new Vector3(0, 0, 0) },
+        1 => new[] { pos + new Vector3(1, 0, 0), pos + new Vector3(1, 1, 0), pos + new Vector3(1, 1, 1), pos + new Vector3(1, 0, 1) },
+        2 => new[] { pos + new Vector3(0, 1, 1), pos + new Vector3(1, 1, 1), pos + new Vector3(1, 1, 0), pos + new Vector3(0, 1, 0) },
+        3 => new[] { pos + new Vector3(0, 0, 0), pos + new Vector3(1, 0, 0), pos + new Vector3(1, 0, 1), pos + new Vector3(0, 0, 1) },
+        4 => new[] { pos + new Vector3(0, 0, 0), pos + new Vector3(0, 1, 0), pos + new Vector3(1, 1, 0), pos + new Vector3(1, 0, 0) },
+        5 => new[] { pos + new Vector3(1, 0, 1), pos + new Vector3(1, 1, 1), pos + new Vector3(0, 1, 1), pos + new Vector3(0, 0, 1) },
+        _ => null
+    };
+
+    private static Vector3Int GetNeighborOffset(int face) => face switch
+    {
+        0 => new Vector3Int(-1, 0, 0),
+        1 => new Vector3Int(1, 0, 0),
+        2 => new Vector3Int(0, 1, 0),
+        3 => new Vector3Int(0, -1, 0),
+        4 => new Vector3Int(0, 0, -1),
+        5 => new Vector3Int(0, 0, 1),
+        _ => Vector3Int.zero
+    };
+
+    private byte GetBlockGlobal(int x, int y, int z)
+    {
+        // Dentro del mismo chunk
+        if (x >= 0 && x < size && y >= 0 && y < size && z >= 0 && z < size)
+            return blocks[x, y, z];
+
+        // --- Coordenadas fuera del límite ---
+        Vector3Int offset = Vector3Int.zero;
+        int nx = x, ny = y, nz = z;
+
+        if (x < 0) { offset.x = -1; nx = size - 1; }
+        else if (x >= size) { offset.x = 1; nx = 0; }
+
+        if (z < 0) { offset.z = -1; nz = size - 1; }
+        else if (z >= size) { offset.z = 1; nz = 0; }
+
+        // 👇 Corregido: mantiene el valor de Y sin reubicarlo
+        if (ny < 0 || ny >= size) return 0;
+
+        if (!neighborCache.TryGetValue(offset, out var neighbor) || neighbor == null)
+            return 0;
+
+        // 👇 Corregido: validación usando límites del vecino, no del original
+        if (nx < 0 || nx >= neighbor.GetLength(0) ||
+            ny < 0 || ny >= neighbor.GetLength(1) ||
+            nz < 0 || nz >= neighbor.GetLength(2))
+            return 0;
+
+        return neighbor[nx, ny, nz];
+    }
+
+    public void SetBlock(Vector3Int localPos, byte id)
+    {
+        blocks[localPos.x, localPos.y, localPos.z] = id;
+        BuildMesh();
+    }
+
+    private string GetBlockName(byte id) => id switch
+    {
+        1 => "dirt",
+        2 => "grass",
+        3 => "stone",
+        _ => "dirt"
+    };
+}
+
+---
+
+atlasbuilder.cs
+using UnityEngine;
+using System.Collections.Generic;
+
+public class AtlasBuilder : MonoBehaviour
+{
+    public static AtlasBuilder Instance;
+
+    [Header("Atlas Manual")]
+    public Texture2D manualAtlas;      // Asignalo desde el inspector (atlas.png)
+    public int cellSize = 16;          // Tamaño de cada bloque en píxeles
+    public int columns = 30;           // Número de columnas del atlas (30x30)
+
+    [Header("Materials")]
+    public Material defaultMaterial;
+    public Material grassTintMaterial;
+
+    private readonly Dictionary<string, Rect> uvRects = new();
+    private readonly Dictionary<string, Material> materials = new();
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else { Destroy(gameObject); return; }
+
+        BuildManualAtlas();
+        BuildMaterials();
+    }
+
+    // ============================================================
+    // 🧩 GENERACIÓN DE UVS
+    // ============================================================
+    private void BuildManualAtlas()
+    {
+        uvRects.Clear();
+
+        if (manualAtlas == null)
+            manualAtlas = Resources.Load<Texture2D>("Atlas/atlas");
+
+        if (manualAtlas == null)
+        {
+            Debug.LogError("❌ No se encontró atlas en Resources/Atlas/atlas.png");
+            return;
+        }
+
+        // ✅ Configuración pixel-perfect
+        manualAtlas.filterMode = FilterMode.Point;
+        manualAtlas.wrapMode = TextureWrapMode.Clamp;
+
+        float atlasWidth = manualAtlas.width;
+        float atlasHeight = manualAtlas.height;
+
+        // 🟩 UV exactos sin separación
+        float uvW = cellSize / atlasWidth;
+        float uvH = cellSize / atlasHeight;
+
+        // --- Registro de texturas ---
+        uvRects["dirt"] = GetUVRect(0, 0, uvW, uvH);
+        uvRects["dirt1"] = GetUVRect(1, 0, uvW, uvH);
+        uvRects["dirt2"] = GetUVRect(2, 0, uvW, uvH);
+        uvRects["dirt3"] = GetUVRect(3, 0, uvW, uvH);
+
+        uvRects["grass_side"] = GetUVRect(4, 0, uvW, uvH);
+        uvRects["grass_side_overlay"] = GetUVRect(6, 0, uvW, uvH);
+
+        uvRects["grass_top"] = GetUVRect(0, 1, uvW, uvH);
+        uvRects["grass_top1"] = GetUVRect(1, 1, uvW, uvH);
+        uvRects["grass_top2"] = GetUVRect(2, 1, uvW, uvH);
+        uvRects["grass_top3"] = GetUVRect(3, 1, uvW, uvH);
+        uvRects["grass_top4"] = GetUVRect(4, 1, uvW, uvH);
+        uvRects["grass_top5"] = GetUVRect(5, 1, uvW, uvH);
+        uvRects["grass_top6"] = GetUVRect(6, 1, uvW, uvH);
+
+        uvRects["gravel"] = GetUVRect(0, 2, uvW, uvH);
+        uvRects["gravel1"] = GetUVRect(1, 2, uvW, uvH);
+        uvRects["gravel2"] = GetUVRect(2, 2, uvW, uvH);
+        uvRects["gravel3"] = GetUVRect(3, 2, uvW, uvH);
+
+        uvRects["sand"] = GetUVRect(4, 2, uvW, uvH);
+        uvRects["sand1"] = GetUVRect(5, 2, uvW, uvH);
+        uvRects["sand2"] = GetUVRect(6, 2, uvW, uvH);
+
+        uvRects["stone"] = GetUVRect(0, 3, uvW, uvH);
+        uvRects["stone1"] = GetUVRect(1, 3, uvW, uvH);
+        uvRects["limestone"] = GetUVRect(4, 3, uvW, uvH);
+        uvRects["andesite"] = GetUVRect(5, 3, uvW, uvH);
+        uvRects["granite"] = GetUVRect(6, 3, uvW, uvH);
+
+        Debug.Log($"✅ Atlas manual cargado correctamente ({atlasWidth}x{atlasHeight}) con {uvRects.Count} texturas.");
+    }
+
+    private Rect GetUVRect(int col, int row, float uvW, float uvH)
+    {
+        float u = col * uvW;
+        float v = 1f - (row + 1) * uvH; // Invertido verticalmente (Unity)
+        return new Rect(u, v, uvW, uvH);
+    }
+
+    // ============================================================
+    // 🎨 MATERIALES
+    // ============================================================
+    private void BuildMaterials()
+    {
+        materials.Clear();
+
+        if (manualAtlas == null)
+        {
+            Debug.LogError("❌ No se encontró el atlas para asignar materiales.");
+            return;
+        }
+
+        // === Material base ===
+        if (defaultMaterial != null)
+        {
+            Material mat = new(defaultMaterial);
+            mat.name = "DefaultAtlasMat";
+            mat.mainTexture = manualAtlas;
+            mat.SetTexture("_BaseMap", manualAtlas);
+            mat.mainTexture.filterMode = FilterMode.Point;
+            mat.mainTexture.wrapMode = TextureWrapMode.Clamp;
+
+            if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", Color.white);
+
+            materials["default"] = mat;
+        }
+        else
+        {
+            Debug.LogWarning("⚠ No se asignó Default Material en el AtlasBuilder.");
+        }
+
+        // === Material con tinte de pasto ===
+        if (grassTintMaterial != null)
+        {
+            Material mat = new(grassTintMaterial);
+            mat.name = "GrassTintAtlasMat";
+            mat.mainTexture = manualAtlas;
+            mat.SetTexture("_BaseMap", manualAtlas);
+            mat.mainTexture.filterMode = FilterMode.Point;
+            mat.mainTexture.wrapMode = TextureWrapMode.Clamp;
+            mat.EnableKeyword("_BASEMAP");
+
+            if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", Color.white);
+            if (mat.HasProperty("_TintStrength"))
+                mat.SetFloat("_TintStrength", 1.0f);
+            if (mat.HasProperty("_AlphaCutoff"))
+                mat.SetFloat("_AlphaCutoff", 0.3f);
+
+            materials["grasstint"] = mat;
+        }
+        else
+        {
+            Debug.LogWarning("⚠ No se asignó GrassTint Material en el AtlasBuilder.");
+        }
+
+        Debug.Log("✅ Materiales del atlas listos: " + string.Join(", ", materials.Keys));
+    }
+
+    // ============================================================
+    // 🔎 UTILIDADES
+    // ============================================================
+    public Rect GetUV(string name)
+    {
+        if (uvRects.TryGetValue(name, out Rect rect))
+            return rect;
+
+        Debug.LogWarning($"⚠ UV no encontrado: {name}");
+        return new Rect(0, 0, 1, 1);
+    }
+
+    public Material GetMaterialForBlock(string materialType)
+    {
+        if (string.IsNullOrEmpty(materialType))
+            return materials["default"];
+
+        string key = materialType.ToLower();
+
+        if (materials.ContainsKey(key))
+            return materials[key];
+
+        return materials["default"];
+    }
+
+    // 🔹 Requeridos por tus otros scripts
+    public Texture2D GetAtlasTexture() => manualAtlas;
+    public Material GetSharedMaterial() =>
+        materials.ContainsKey("default") ? materials["default"] : null;
+}
+
+---
+
+blockdata.cs
+using System.Collections.Generic;
+using UnityEngine;
+using Newtonsoft.Json;
+
+/// <summary>
+/// Estructura de texturas del bloque.
+/// </summary>
+[System.Serializable]
+public class BlockTextureInfo
+{
+    public string[] top;
+    public string[] bottom;
+    public string[] side;
+    public string[] overlay;
+    public string all;
+}
+
+/// <summary>
+/// Estructura completa de datos de un bloque, extendida.
+/// </summary>
+[System.Serializable]
+public class BlockInfo
+{
+    public string name;
+    public string displayName;
+    public string material = "Default";   // 🔹 Material asignado (ej: "Default", "GrassTint")
+    public string category = "Generic";   // 🔹 Tipo de bloque: Soil, Rock, Wood, etc.
+    public bool solid = true;
+    public bool isTransparent = false;
+    public bool isFlammable = false;
+    public bool isSolid = true;
+    public float hardness = 1.0f;         // 🔹 Cuánto tarda en romperse
+    public string tool = "Any";           // 🔹 Herramienta ideal
+    public string[] drops;                // 🔹 Qué ítems suelta
+    public float lightEmission = 0f;      // 🔹 Luz emitida (0–1)
+    public BlockTextureInfo textures;
+}
+
+/// <summary>
+/// Base de datos de todos los bloques cargados desde BlockData.json
+/// </summary>
+public class BlockDatabase : MonoBehaviour
+{
+    public static BlockDatabase Instance;
+    public Dictionary<string, BlockInfo> blocks;
+
+    private void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else { Destroy(gameObject); return; }
+
+        LoadBlockData();
+    }
+
+    private void LoadBlockData()
+    {
+        TextAsset json = Resources.Load<TextAsset>("BlockData");
+        if (json == null)
+        {
+            Debug.LogError("❌ Falta BlockData.json en Resources/");
+            return;
+        }
+
+        try
+        {
+            blocks = JsonConvert.DeserializeObject<Dictionary<string, BlockInfo>>(json.text);
+            Debug.Log($"✅ Cargados {blocks.Count} bloques desde JSON");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("❌ Error al leer JSON: " + e.Message);
+        }
+    }
+
+    public BlockInfo GetBlock(string id)
+    {
+        if (blocks == null || !blocks.ContainsKey(id))
+        {
+            Debug.LogWarning($"⚠ Bloque '{id}' no encontrado");
+            return null;
+        }
+        return blocks[id];
+    }
+
+    /// <summary>
+    /// Obtiene el material adecuado según el tipo definido en el JSON.
+    /// </summary>
+    public Material GetMaterialForBlock(string blockId)
+    {
+        if (!blocks.TryGetValue(blockId, out var info))
+            return AtlasBuilder.Instance.GetSharedMaterial();
+
+        string matType = info.material?.ToLower() ?? "default";
+
+        // ⚙️ Delegamos la elección del material al AtlasBuilder (por si en el futuro se amplía)
+        return AtlasBuilder.Instance.GetMaterialForBlock(info.material);
+    }
+}
+
+
+
+
+---
+
+blockmaterial.cs
+using UnityEngine;
+
+[ExecuteAlways]
+public class BlockMaterialSetup : MonoBehaviour
+{
+    [Tooltip("Arrastrar el material Blocks.mat aquí (el mismo que usa AtlasBuilder).")]
+    public Material targetMaterial;
+
+    void Start()
+    {
+        if (targetMaterial == null)
+        {
+            Debug.LogWarning("BlockMaterialSetup: no asignaste targetMaterial en el inspector.");
+            return;
+        }
+
+        if (AtlasBuilder.Instance == null)
+        {
+            Debug.LogWarning("BlockMaterialSetup: AtlasBuilder.Instance no está listo aún.");
+            return;
+        }
+
+        Texture2D atlas = AtlasBuilder.Instance.GetAtlasTexture();
+        if (atlas == null)
+        {
+            Debug.LogWarning("BlockMaterialSetup: atlas aún no generado o es null.");
+            return;
+        }
+
+        Material inst = Instantiate(targetMaterial);
+        inst.name = targetMaterial.name + "_instance";
+
+        if (inst.HasProperty("_MainTex"))
+            inst.SetTexture("_MainTex", atlas);
+
+        if (inst.HasProperty("_Color"))
+            inst.SetColor("_Color", Color.white);
+
+        if (inst.HasProperty("_Cull"))
+            inst.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+        else
+            inst.SetInt("_CullMode", 0);
+
+        var rend = GetComponent<Renderer>();
+        if (rend != null)
+            rend.sharedMaterial = inst;
+
+        // 🔧 NUEVO método no obsoleto
+        Chunk[] chunks = Object.FindObjectsByType<Chunk>(FindObjectsSortMode.None);
+        foreach (var c in chunks)
+        {
+            var mr = c.GetComponent<MeshRenderer>();
+            if (mr != null) mr.sharedMaterial = inst;
+        }
+
+        Debug.Log($"BlockMaterialSetup: material instanciado y atlas asignado ({atlas.width}x{atlas.height}).");
+    }
+}
+
+---
+
+chunkworker.cs
+using UnityEngine;
+using System.Collections.Generic;
+using System.Threading;
+
+public static class ChunkWorker
+{
+    private static readonly Queue<Job> jobQueue = new();
+    private static readonly List<Job> completedJobs = new();
+    private static Thread workerThread;
+    private static bool running = false;
+
+    private class Job
+    {
+        public Vector3Int coord;
+        public int size;
+        public float heightMultiplier;
+        public byte[,,] result;
+    }
+
+    public static void StartWorker()
+    {
+        if (running) return;
+        running = true;
+        workerThread = new Thread(ProcessJobs)
+        {
+            IsBackground = true,
+            Name = "ChunkWorkerThread"
+        };
+        workerThread.Start();
+        Debug.Log("[ChunkWorker] Hilo de generación iniciado.");
+    }
+
+    public static void StopWorker()
+    {
+        running = false;
+        workerThread?.Join();
+        workerThread = null;
+        Debug.Log("[ChunkWorker] Hilo detenido correctamente.");
+    }
+
+    public static void EnqueueJob(Vector3Int coord, int size, float noiseScale, float heightMultiplier)
+    {
+        lock (jobQueue)
+        {
+            jobQueue.Enqueue(new Job
+            {
+                coord = coord,
+                size = size,
+                heightMultiplier = heightMultiplier
+            });
+        }
+    }
+
+    public static bool TryGetCompletedJob(out byte[,,] data, out Vector2Int coord)
+    {
+        lock (completedJobs)
+        {
+            if (completedJobs.Count > 0)
+            {
+                var job = completedJobs[0];
+                completedJobs.RemoveAt(0);
+                data = job.result;
+                coord = new Vector2Int(job.coord.x, job.coord.z);
+                return true;
+            }
+        }
+
+        data = null;
+        coord = default;
+        return false;
+    }
+
+    private static void ProcessJobs()
+    {
+        while (running)
+        {
+            Job job = null;
+            lock (jobQueue)
+            {
+                if (jobQueue.Count > 0)
+                    job = jobQueue.Dequeue();
+            }
+
+            if (job != null)
+            {
+                job.result = GenerateChunk(job.coord, job.size, job.heightMultiplier);
+                lock (completedJobs)
+                    completedJobs.Add(job);
+            }
+
+            Thread.Sleep(1);
+        }
+    }
+
+    private static byte[,,] GenerateChunk(Vector3Int coord, int size, float heightMultiplier)
+    {
+        byte[,,] data = new byte[size, size, size];
+
+        int baseX = coord.x * size;
+        int baseZ = coord.z * size;
+
+        for (int x = 0; x < size; x++)
+        {
+            for (int z = 0; z < size; z++)
+            {
+                float worldX = baseX + x;
+                float worldZ = baseZ + z;
+
+                // ✅ Ruido global coherente
+                float noiseValue = Noise.GetGlobal(worldX, worldZ);
+                int terrainHeight = Mathf.FloorToInt(noiseValue * heightMultiplier);
+                terrainHeight = Mathf.Clamp(terrainHeight, 1, size - 2);
+
+                for (int y = 0; y < size; y++)
+                {
+                    if (y < terrainHeight - 3)
+                        data[x, y, z] = 3;   // Stone
+                    else if (y < terrainHeight)
+                        data[x, y, z] = 1;   // Dirt
+                    else if (y == terrainHeight)
+                        data[x, y, z] = 2;   // Grass
+                    else
+                        data[x, y, z] = 0;   // Air
+                }
+            }
+        }
+
+        return data;
+    }
+}
+
+---
+
+hotbarinventory.cs
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class HotbarInventory : MonoBehaviour
+{
+    public byte[] slots = new byte[9];
+    public int selectedSlot = 0;
+
+    private PlayerBlockInteractor interactor;
+
+    void Start()
+    {
+        interactor = GetComponent<PlayerBlockInteractor>();
+
+        // bloques de prueba
+        slots[0] = 1; // dirt
+        slots[1] = 2; // grass
+        slots[2] = 3; // stone
+    }
+
+    void Update()
+    {
+        var keyboard = Keyboard.current;
+        if (keyboard == null) return;
+
+        for (int i = 0; i < 9; i++)
+        {
+            // Key.Digit1, Key.Digit2, ..., Key.Digit9
+            Key key = Key.Digit1 + i;
+
+            if (keyboard[key].wasPressedThisFrame)
+            {
+                selectedSlot = i;
+                if (interactor != null)
+                    interactor.selectedBlock = slots[i];
+
+                Debug.Log($"Seleccionado slot {i + 1} → bloque {slots[i]}");
+            }
+        }
+    }
+}
+
+---
+
+chunkmanager.cs
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ChunkManager : MonoBehaviour
+{
+    [Header("Chunk Settings")]
+    public int chunkSize = 16;
+    public int worldRadius = 3;
+    public int worldHeight = 4; // número de capas de chunks en vertical
+
+    [Header("References")]
+    public Transform player;
+    public Material chunkMaterial;
+
+    private Dictionary<Vector3Int, GameObject> activeChunks = new();
+    private ChunkStorage storage;
+    private bool generating = false;
+    private Vector3Int lastPlayerChunk;
+
+    private void Start()
+    {
+        storage = FindObjectOfType<ChunkStorage>();
+        if (storage == null)
+        {
+            GameObject obj = new("ChunkStorage");
+            storage = obj.AddComponent<ChunkStorage>();
+        }
+
+        ChunkWorker.StartWorker();
+        StartCoroutine(UpdateChunksLoop());
+    }
+
+    private void OnDestroy()
+    {
+        ChunkWorker.StopWorker();
+    }
+
+    private IEnumerator UpdateChunksLoop()
+    {
+        while (true)
+        {
+            UpdateChunksAroundPlayer();
+            yield return new WaitForSeconds(0.25f);
+        }
+    }
+
+    private void UpdateChunksAroundPlayer()
+    {
+        if (player == null || generating) return;
+
+        Vector3Int playerChunk = new(
+            Mathf.FloorToInt(player.position.x / chunkSize),
+            Mathf.FloorToInt(player.position.y / chunkSize),
+            Mathf.FloorToInt(player.position.z / chunkSize)
+        );
+
+        if (playerChunk == lastPlayerChunk && activeChunks.Count > 0)
+            return;
+
+        lastPlayerChunk = playerChunk;
+        StartCoroutine(GenerateChunksAroundPlayer(playerChunk));
+    }
+
+    private IEnumerator GenerateChunksAroundPlayer(Vector3Int center)
+    {
+        generating = true;
+
+        List<Vector3Int> needed = new();
+        for (int x = -worldRadius; x <= worldRadius; x++)
+        {
+            for (int z = -worldRadius; z <= worldRadius; z++)
+            {
+                for (int y = 0; y < worldHeight; y++) // genera niveles verticales
+                {
+                    needed.Add(new Vector3Int(center.x + x, y, center.z + z));
+                }
+            }
+        }
+
+        // eliminar chunks fuera del rango
+        List<Vector3Int> toRemove = new();
+        foreach (var kv in activeChunks)
+            if (!needed.Contains(kv.Key))
+                toRemove.Add(kv.Key);
+
+        foreach (var coord in toRemove)
+        {
+            ChunkPool.Instance.ReturnChunk(activeChunks[coord]);
+            activeChunks.Remove(coord);
+        }
+
+        // generar nuevos chunks
+        foreach (var coord in needed)
+        {
+            if (activeChunks.ContainsKey(coord)) continue;
+
+            byte[,,] data = null;
+            if (storage.HasData(new Vector2Int(coord.x, coord.z)))
+            {
+                data = storage.GetChunkData(new Vector2Int(coord.x, coord.z));
+            }
+            else
+            {
+                ChunkWorker.EnqueueJob(coord, chunkSize, 0.08f, 16f);
+                yield return new WaitUntil(() => ChunkWorker.TryGetCompletedJob(out data, out var c) &&
+                    c.x == coord.x && c.y == coord.z);
+                if (data != null)
+                    storage.SaveChunk(new Vector2Int(coord.x, coord.z), data);
+            }
+
+            if (data != null)
+                CreateChunk(coord, data);
+
+            yield return null;
+        }
+
+        generating = false;
+    }
+
+    private void CreateChunk(Vector3Int coord, byte[,,] data)
+    {
+        Vector3 pos = new(coord.x * chunkSize, coord.y * chunkSize, coord.z * chunkSize);
+        GameObject chunkObj = ChunkPool.Instance.GetChunk(pos, transform);
+
+        Chunk chunk = chunkObj.GetComponent<Chunk>();
+        chunk.material = chunkMaterial ?? AtlasBuilder.Instance.GetSharedMaterial();
+        chunk.size = chunkSize;
+        chunk.SetData(data, coord, FindObjectOfType<WorldGenerator>());
+        activeChunks[coord] = chunkObj;
+
+        Debug.Log($"🟩 Chunk generado en {coord}");
+    }
+}
+
+---
+
+chunkpool.cs
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ChunkPool : MonoBehaviour
+{
+    public static ChunkPool Instance { get; private set; }
+
+    private readonly Queue<GameObject> pool = new Queue<GameObject>();
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+            Destroy(gameObject);
+        else
+            Instance = this;
+    }
+
+    public GameObject GetChunk(Vector3 position, Transform parent = null)
+    {
+        GameObject obj;
+        if (pool.Count > 0)
+        {
+            obj = pool.Dequeue();
+            obj.SetActive(true);
+        }
+        else
+        {
+            obj = new GameObject("Chunk");
+            obj.AddComponent<Chunk>();
+        }
+
+        obj.transform.parent = parent;
+        obj.transform.position = position;
+        return obj;
+    }
+
+    public void ReturnChunk(GameObject chunk)
+    {
+        chunk.SetActive(false);
+        pool.Enqueue(chunk);
+    }
+}
+
+---
+
+worldgenerator.cs
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+public class WorldGenerator : MonoBehaviour
+{
+    [Header("World Settings")]
+    public int chunkSize = 16;
+    public int worldRadius = 512;
+    public int viewRadius = 8;
+    public float updateInterval = 0.25f;
+
+    [Header("Noise Settings")]
+    public float noiseScale = 0.08f;
+    public float heightMultiplier = 16f;
+
+    [Header("Seed Settings")]
+    public int customSeed = 0;
+
+    [Header("Precompute (cache)")]
+    public int precomputeRadius = 0;
+    public int precomputeBatchSize = 256;
+
+    [Header("References")]
+    public Transform player;
+    public Material defaultMaterial;
+    public Material tintedMaterial;
+
+    private Dictionary<Vector2Int, GameObject> activeChunks = new();
+    private ChunkStorage storage;
+    private Vector2Int lastPlayerChunk = new(int.MinValue, int.MinValue);
+    private bool generating = false;
+
+    void Start()
+    {
+        if (customSeed != 0)
+        {
+            WorldSettings.InitializeSeed(customSeed);
+            Debug.Log($"🌍 Usando semilla personalizada: {customSeed}");
+        }
+        else
+        {
+            WorldSettings.InitializeSeed();
+            Debug.Log($"🌍 Semilla aleatoria generada: {WorldSettings.Seed}");
+        }
+
+        storage = Object.FindFirstObjectByType<ChunkStorage>();
+        if (storage == null)
+        {
+            GameObject obj = new("ChunkStorage");
+            storage = obj.AddComponent<ChunkStorage>();
+            Debug.Log("[WorldGenerator] ChunkStorage creado en runtime.");
+        }
+
+        ChunkWorker.StartWorker();
+        Debug.Log("[WorldGenerator] ChunkWorker iniciado.");
+
+        StartCoroutine(WaitForAtlasThenGenerate());
+    }
+
+    void OnDestroy() => ChunkWorker.StopWorker();
+
+    private IEnumerator WaitForAtlasThenGenerate()
+    {
+        yield return new WaitUntil(() =>
+            AtlasBuilder.Instance != null &&
+            AtlasBuilder.Instance.GetAtlasTexture() != null);
+
+        if (precomputeRadius > 0)
+            StartCoroutine(PrecomputeWorldData(precomputeRadius));
+
+        StartCoroutine(UpdateWorldLoop());
+    }
+
+    private IEnumerator UpdateWorldLoop()
+    {
+        while (true)
+        {
+            UpdateChunksAroundPlayer();
+            yield return new WaitForSeconds(updateInterval);
+        }
+    }
+
+    private void UpdateChunksAroundPlayer()
+    {
+        if (player == null || generating) return;
+
+        Vector2Int playerChunk = new(
+            Mathf.FloorToInt(player.position.x / chunkSize),
+            Mathf.FloorToInt(player.position.z / chunkSize)
+        );
+
+        if (playerChunk != lastPlayerChunk)
+        {
+            lastPlayerChunk = playerChunk;
+            StartCoroutine(GenerateChunksAroundPlayer(playerChunk));
+        }
+    }
+
+    private IEnumerator GenerateChunksAroundPlayer(Vector2Int center)
+    {
+        generating = true;
+
+        List<Vector2Int> needed = new();
+        for (int x = -viewRadius; x <= viewRadius; x++)
+        for (int z = -viewRadius; z <= viewRadius; z++)
+        {
+            Vector2Int coord = new(center.x + x, center.y + z);
+            if (Mathf.Abs(coord.x) > worldRadius || Mathf.Abs(coord.y) > worldRadius) continue;
+            needed.Add(coord);
+        }
+
+        needed.Sort((a, b) => Vector2.Distance(a, center).CompareTo(Vector2.Distance(b, center)));
+
+        List<Vector2Int> toRemove = new();
+        foreach (var kv in activeChunks)
+            if (!needed.Contains(kv.Key))
+                toRemove.Add(kv.Key);
+
+        foreach (var coord in toRemove)
+        {
+            ChunkPool.Instance.ReturnChunk(activeChunks[coord]);
+            activeChunks.Remove(coord);
+        }
+
+        foreach (var coord in needed)
+        {
+            if (activeChunks.ContainsKey(coord)) continue;
+
+            byte[,,] data = storage?.GetChunkData(coord);
+            if (data == null)
+            {
+                Vector3Int chunkCoord = new(coord.x, 0, coord.y);
+                ChunkWorker.EnqueueJob(chunkCoord, chunkSize, noiseScale, heightMultiplier);
+                float timeout = Time.realtimeSinceStartup + 10f;
+
+                while (Time.realtimeSinceStartup < timeout)
+                {
+                    if (ChunkWorker.TryGetCompletedJob(out data, out var completedCoord))
+                    {
+                        if (completedCoord.x == chunkCoord.x && completedCoord.y == chunkCoord.z)
+                            break;
+                    }
+                    yield return null;
+                }
+
+                if (data != null && storage != null)
+                    storage.SaveChunk(coord, data);
+            }
+
+            if (data != null)
+                CreateChunk(coord, data, chunkSize);
+
+            yield return null;
+        }
+
+        generating = false;
+    }
+
+    private void CreateChunk(Vector2Int coord, byte[,,] data, int size)
+    {
+        Vector3 pos = new(coord.x * size, 0, coord.y * size);
+        GameObject chunkObj = ChunkPool.Instance.GetChunk(pos, transform);
+
+        Chunk chunk = chunkObj.GetComponent<Chunk>();
+        if (chunk == null)
+        {
+            Debug.LogError("[WorldGenerator] El objeto obtenido no tiene componente Chunk.");
+            return;
+        }
+
+        chunk.Initialize(data, new Vector3Int(coord.x, 0, coord.y), this);
+        activeChunks[coord] = chunkObj;
+    }
+
+    public Vector3Int GetBlockCoords(Vector3 worldPos)
+    {
+        return new Vector3Int(
+            Mathf.FloorToInt(worldPos.x),
+            Mathf.FloorToInt(worldPos.y),
+            Mathf.FloorToInt(worldPos.z)
+        );
+    }
+
+    public void SetBlock(Vector3Int pos, byte id)
+    {
+        Vector3Int chunkCoord = new(
+            Mathf.FloorToInt((float)pos.x / chunkSize),
+            Mathf.FloorToInt((float)pos.y / chunkSize),
+            Mathf.FloorToInt((float)pos.z / chunkSize)
+        );
+
+        Chunk chunk = GetChunk(chunkCoord);
+        if (chunk == null) return;
+
+        int lx = Mathf.Clamp((pos.x % chunkSize + chunkSize) % chunkSize, 0, chunkSize - 1);
+        int ly = Mathf.Clamp(pos.y, 0, chunkSize - 1);
+        int lz = Mathf.Clamp((pos.z % chunkSize + chunkSize) % chunkSize, 0, chunkSize - 1);
+
+        chunk.SetBlock(new Vector3Int(lx, ly, lz), id);
+    }
+
+    private IEnumerator PrecomputeWorldData(int radius)
+    {
+        yield break;
+    }
+
+    public byte[,,] GetChunkBlocks(Vector3Int chunkCoord)
+    {
+        Vector2Int key = new(chunkCoord.x, chunkCoord.z);
+        return storage?.GetChunkData(key);
+    }
+
+    public Chunk GetChunk(Vector3Int chunkCoord)
+    {
+        Vector2Int key = new(chunkCoord.x, chunkCoord.z);
+        return activeChunks.TryGetValue(key, out GameObject obj) ? obj.GetComponent<Chunk>() : null;
+    }
+}
+
+---
+
+worldseting.cs
+using UnityEngine;
+
+public static class WorldSettings
+{
+    public static int Seed { get; private set; }
+    public static Vector2 Offset { get; private set; }
+    private static bool initialized = false;
+
+    /// <summary>
+    /// Inicializa la seed global del mundo (solo una vez).
+    /// Si pasas null -> seed aleatoria.
+    /// </summary>
+    public static void InitializeSeed(int? seed = null)
+    {
+        if (initialized) return;
+        initialized = true;
+
+        Seed = seed ?? Random.Range(int.MinValue, int.MaxValue);
+
+        // Offset global derivado de la seed para evitar coordenadas negativas problemáticas
+        System.Random rng = new System.Random(Seed);
+        Offset = new Vector2(rng.Next(-100000, 100000), rng.Next(-100000, 100000));
+
+        Debug.Log($"🌱 Semilla mundial generada: {Seed} | Offset: {Offset}");
+    }
+}
+
+---
+
+eso es gran parte de mi codigo
