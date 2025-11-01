@@ -6,7 +6,7 @@ public class ClearRenderers : EditorWindow
     [MenuItem("Tools/Clear Renderer Materials")]
     static void ClearMaterials()
     {
-        var renderers = GameObject.FindObjectsOfType<MeshRenderer>();
+        var renderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
         foreach (var r in renderers)
         {
             r.sharedMaterial = null;

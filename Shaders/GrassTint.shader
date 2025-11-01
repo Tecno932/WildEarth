@@ -10,6 +10,7 @@ Shader "URP/GrassTintFlatBalanced"
         _SaturationThreshold ("Max Saturation to Tint", Range(0,1)) = 0.25
         _MinBrightness ("Min Brightness", Range(0,1)) = 0.12
         _MaxBrightness ("Max Brightness", Range(0,1)) = 0.95
+        _Color ("_BiomeTint", Color) = (1,1,1,1)
     }
 
     SubShader

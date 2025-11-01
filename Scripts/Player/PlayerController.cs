@@ -124,6 +124,15 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMovement()
     {
+        Vector3Int playerChunk = new(
+        Mathf.FloorToInt(transform.position.x / world.chunkSize),
+        0,
+        Mathf.FloorToInt(transform.position.z / world.chunkSize)
+        );
+
+        if (!world.IsChunkLoaded(playerChunk))
+            return; // no avanzar si el chunk no existe
+
         Vector3 move = (transform.right * moveInput.x + transform.forward * moveInput.y).normalized;
         float currentSpeed = runPressed ? runSpeed : walkSpeed;
 

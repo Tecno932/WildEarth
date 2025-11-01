@@ -59,9 +59,8 @@ public class AtlasBuilder : MonoBehaviour
         uvRects["dirt2"] = GetUVRect(2, 0, uvW, uvH);
         uvRects["dirt3"] = GetUVRect(3, 0, uvW, uvH);
 
-        uvRects["grass_side"] = GetUVRect(4, 0, uvW, uvH);
-        uvRects["grass_side_overlay"] = GetUVRect(6, 0, uvW, uvH);
 
+        uvRects["grass_side"] = GetUVRect(5, 0, uvW, uvH);
         uvRects["grass_top"] = GetUVRect(0, 1, uvW, uvH);
         uvRects["grass_top1"] = GetUVRect(1, 1, uvW, uvH);
         uvRects["grass_top2"] = GetUVRect(2, 1, uvW, uvH);
@@ -76,7 +75,7 @@ public class AtlasBuilder : MonoBehaviour
         uvRects["gravel3"] = GetUVRect(3, 2, uvW, uvH);
 
         uvRects["sand"] = GetUVRect(4, 2, uvW, uvH);
-        uvRects["sand1"] = GetUVRect(5, 2, uvW, uvH);
+        uvRects["water"] = GetUVRect(5, 2, uvW, uvH);
         uvRects["sand2"] = GetUVRect(6, 2, uvW, uvH);
 
         uvRects["stone"] = GetUVRect(0, 3, uvW, uvH);
